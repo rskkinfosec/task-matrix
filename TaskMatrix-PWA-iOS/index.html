@@ -1,0 +1,2210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TaskMatrix by Kaushal RSK</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="description" content="Eisenhower Matrix Task Manager - Organize tasks by urgency and importance">
+    <meta name="author" content="Kaushal RSK">
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- iOS Specific Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="TaskMatrix">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
+    <!-- Theme Colors -->
+    <meta name="theme-color" content="#667eea">
+    <meta name="msapplication-TileColor" content="#667eea">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 10px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 15px;
+            font-size: 22px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        /* PWA Install Prompt */
+        .install-prompt {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 10000;
+            max-width: 90%;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateX(-50%) translateY(100px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+
+        .install-prompt.show {
+            display: block;
+        }
+
+        .install-content {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .install-icon {
+            font-size: 32px;
+        }
+
+        .install-text {
+            flex: 1;
+        }
+
+        .install-text h3 {
+            margin: 0 0 5px 0;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .install-text p {
+            margin: 0;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .install-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .install-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .install-btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .install-btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        /* Top Level Tabs */
+        .top-tabs {
+            display: flex;
+            gap: 5px;
+            overflow-x: auto;
+            margin-bottom: 15px;
+            padding: 5px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .top-tab {
+            padding: 10px 15px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.3s;
+            font-size: 14px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .top-tab.active {
+            background: white;
+            color: #667eea;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .top-tab.add-tab {
+            background: rgba(76, 175, 80, 0.8);
+            border-color: white;
+        }
+
+        .delete-tab-btn {
+            background: rgba(255, 68, 68, 0.8);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 12px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .delete-tab-btn:hover {
+            background: rgba(255, 0, 0, 1);
+            transform: scale(1.1);
+        }
+
+        .priority-indicator {
+            display: inline-block;
+            margin-left: 5px;
+            font-size: 10px;
+            color: #ff4444;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.1); }
+        }
+
+        /* Sub Tabs (Active/Completed) */
+        .sub-tabs {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .sub-tab {
+            padding: 8px 20px;
+            border: 2px solid white;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .sub-tab.active {
+            background: white;
+            color: #667eea;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+            margin: 0 auto 15px;
+            max-width: 600px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .action-btn {
+            flex: 1;
+            min-width: 80px;
+            padding: 10px 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 13px;
+            transition: transform 0.2s;
+        }
+
+        .action-btn.clear-btn {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+
+        .action-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Matrix Styles */
+        .matrix-container {
+            position: relative;
+            margin: 50px 5px 30px 5px;
+        }
+
+        .axis-label {
+            position: absolute;
+            font-weight: bold;
+            color: white;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+
+        .axis-label.top {
+            top: -35px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .axis-label.right {
+            right: -15px;
+            top: 50%;
+            transform: translateY(-50%) rotate(90deg);
+        }
+
+        .matrix {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0;
+            background: #333;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+            border: 3px solid #333;
+            margin-bottom: 20px;
+        }
+
+        .matrix.zoomed {
+            grid-template-columns: 1fr;
+            border: none;
+        }
+
+        .quadrant {
+            padding: 15px;
+            min-height: 200px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            border: 2px solid #333;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .quadrant h2 {
+            order: 1;
+            font-size: 14px;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .task-count {
+            order: 2;
+            font-size: 36px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .quadrant > div:not(.task-count) {
+            order: 3;
+        }
+
+        .quadrant .add-btn {
+            order: 4;
+        }
+
+        .quadrant.zoomed {
+            cursor: default;
+            min-height: auto;
+            border-radius: 12px;
+        }
+
+        .quadrant.hidden {
+            display: none;
+        }
+
+        .q2 { border-top-left-radius: 12px; }
+        .q1 { border-top-right-radius: 12px; }
+        .q4 { border-bottom-left-radius: 12px; }
+        .q3 { border-bottom-right-radius: 12px; }
+
+        /* Q1: Red - Urgent & Important */
+        .q1 {
+            background: #fee2e2;
+            color: #7f1d1d;
+        }
+        .q1 h2 { color: #991b1b; }
+        .q1 .task-count { color: #fca5a5; }
+        .q1:hover { background: #fecaca; }
+        .q1.zoomed:hover { background: #fee2e2; }
+
+        /* Q2: Yellow/Orange - Important, Not Urgent */
+        .q2 {
+            background: #fef3c7;
+            color: #78350f;
+        }
+        .q2 h2 { color: #92400e; }
+        .q2 .task-count { color: #fcd34d; }
+        .q2:hover { background: #fde68a; }
+        .q2.zoomed:hover { background: #fef3c7; }
+
+        /* Q3: Blue - Urgent, Not Important */
+        .q3 {
+            background: #dbeafe;
+            color: #1e3a8a;
+        }
+        .q3 h2 { color: #1e40af; }
+        .q3 .task-count { color: #93c5fd; }
+        .q3:hover { background: #bfdbfe; }
+        .q3.zoomed:hover { background: #dbeafe; }
+
+        /* Q4: Green - Not Important, Not Urgent */
+        .q4 {
+            background: #d1fae5;
+            color: #064e3b;
+        }
+        .q4 h2 { color: #065f46; }
+        .q4 .task-count { color: #6ee7b7; }
+        .q4:hover { background: #a7f3d0; }
+        .q4.zoomed:hover { background: #d1fae5; }
+
+        .quadrant.zoomed .task-count {
+            display: none;
+        }
+
+        .quadrant:not(.zoomed) #q1-tasks,
+        .quadrant:not(.zoomed) #q2-tasks,
+        .quadrant:not(.zoomed) #q3-tasks,
+        .quadrant:not(.zoomed) #q4-tasks,
+        .quadrant:not(.zoomed) #q1-completed,
+        .quadrant:not(.zoomed) #q2-completed,
+        .quadrant:not(.zoomed) #q3-completed,
+        .quadrant:not(.zoomed) #q4-completed {
+            display: none;
+        }
+
+        .back-btn {
+            display: none;
+            padding: 10px 20px;
+            background: white;
+            color: #667eea;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .back-btn.visible {
+            display: inline-block;
+        }
+
+        /* Task Styles */
+        .task {
+            background: #f9fafb;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            border-left: 4px solid;
+            font-size: 12px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .q1 .task { border-left-color: #ef4444; }
+        .q2 .task { border-left-color: #f59e0b; }
+        .q3 .task { border-left-color: #3b82f6; }
+        .q4 .task { border-left-color: #10b981; }
+
+        .task.completed {
+            opacity: 0.6;
+            text-decoration: line-through;
+        }
+
+        .task.overdue {
+            background: #fee;
+        }
+
+        .task-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .task-details {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .task-badges {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin: 5px 0;
+        }
+
+        .badge {
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .badge.must-have { background: #fecaca; color: #991b1b; }
+        .badge.good-to-have { background: #d1fae5; color: #065f46; }
+        .badge.recurring { background: #dbeafe; color: #1e40af; }
+        .badge.priority-high { background: #fef3c7; color: #92400e; }
+        .badge.priority-low { background: #e5e7eb; color: #374151; }
+
+        .task-actions {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .task-actions button {
+            padding: 4px 8px;
+            border: none;
+            border-radius: 6px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .btn-complete {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-delete {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-edit {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .add-btn {
+            width: 100%;
+            padding: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .quadrant:not(.zoomed) .add-btn {
+            display: none;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 15px;
+            color: #9ca3af;
+            font-style: italic;
+            font-size: 12px;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-content h3 {
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        .form-group label.required:after {
+            content: " *";
+            color: red;
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="date"],
+        .form-group input[type="number"],
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 50px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-weight: normal;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .form-actions button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .time-estimate {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .time-estimate input {
+            flex: 2;
+            min-width: 0;
+        }
+
+        .time-estimate select {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* TODAY view specific */
+        .today-tasks {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .today-tasks h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .today-task-item {
+            background: #f9fafb;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 18px;
+            }
+            
+            .quadrant h2 {
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- PWA Install Prompt -->
+    <div class="install-prompt" id="installPrompt">
+        <div class="install-content">
+            <div class="install-icon">📱</div>
+            <div class="install-text">
+                <h3>Install TaskMatrix</h3>
+                <p>Add to home screen for quick access & offline use!</p>
+            </div>
+        </div>
+        <div class="install-buttons">
+            <button class="install-btn install-btn-primary" id="installBtn">Install</button>
+            <button class="install-btn install-btn-secondary" id="dismissBtn">Later</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h1>📊 Eisenhower Task Manager</h1>
+
+        <!-- Top Level Tabs -->
+        <div class="top-tabs" id="topTabs">
+            <div class="top-tab active" data-tab="today">📋 TODAY</div>
+            <div class="top-tab" data-tab="home">👨‍👩‍👧‍👦 Family</div>
+            <div class="top-tab" data-tab="official">💼 Official</div>
+            <div class="top-tab" data-tab="self">🌟 Self Interest</div>
+            <div class="top-tab add-tab" onclick="addNewTab()">➕ Add Tab</div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <button class="action-btn" id="exportBtn" onclick="exportToExcel()">📊 Export</button>
+            <button class="action-btn" id="importBtn" onclick="openImportModal()">📥 Import</button>
+            <button class="action-btn" id="settingsBtn" onclick="openSettingsModal()">⚙️ Settings</button>
+            <button class="action-btn clear-btn" id="clearTabBtn" onclick="clearTabTasks()" style="display:none;">🗑️ Clear Tab</button>
+        </div>
+
+        <!-- TODAY View (Read-only) -->
+        <div id="todayView" class="today-view">
+            <div class="today-tasks">
+                <h3>📋 Top 10 Tasks for TODAY</h3>
+                <div id="todayTasksList"></div>
+            </div>
+        </div>
+
+        <!-- Regular Tabs View -->
+        <div id="regularView" style="display: none;">
+            <!-- Sub Tabs (Active/Completed) -->
+            <div class="sub-tabs">
+                <div class="sub-tab active" data-subtab="active">Active Tasks</div>
+                <div class="sub-tab" data-subtab="completed">Completed Tasks</div>
+            </div>
+
+            <div id="activeView">
+                <button class="back-btn" id="backBtnActive" onclick="zoomOut('active')">← Back</button>
+                <div class="matrix-container">
+                    <div class="matrix" id="matrixActive">
+                        <div class="quadrant q2" onclick="zoomIn('q2', 'active')">
+                            <h2>🟡 Important, Not Urgent</h2>
+                            <div class="task-count" id="q2-count">0</div>
+                            <div id="q2-tasks"></div>
+                            <button class="add-btn" onclick="event.stopPropagation(); openModal('q2')">+ Add Task</button>
+                        </div>
+                        <div class="quadrant q1" onclick="zoomIn('q1', 'active')">
+                            <h2>🔴 Urgent & Important</h2>
+                            <div class="task-count" id="q1-count">0</div>
+                            <div id="q1-tasks"></div>
+                            <button class="add-btn" onclick="event.stopPropagation(); openModal('q1')">+ Add Task</button>
+                        </div>
+                        <div class="quadrant q4" onclick="zoomIn('q4', 'active')">
+                            <h2>🟢 Not Important, Not Urgent</h2>
+                            <div class="task-count" id="q4-count">0</div>
+                            <div id="q4-tasks"></div>
+                            <button class="add-btn" onclick="event.stopPropagation(); openModal('q4')">+ Add Task</button>
+                        </div>
+                        <div class="quadrant q3" onclick="zoomIn('q3', 'active')">
+                            <h2>🔵 Urgent, Not Important</h2>
+                            <div class="task-count" id="q3-count">0</div>
+                            <div id="q3-tasks"></div>
+                            <button class="add-btn" onclick="event.stopPropagation(); openModal('q3')">+ Add Task</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="completedView" style="display: none;">
+                <button class="back-btn" id="backBtnCompleted" onclick="zoomOut('completed')">← Back</button>
+                <div class="matrix-container">
+                    <div class="matrix" id="matrixCompleted">
+                        <div class="quadrant q2" onclick="zoomIn('q2', 'completed')">
+                            <h2>🟡 Completed - Important, Not Urgent</h2>
+                            <div class="task-count" id="q2-completed-count">0</div>
+                            <div id="q2-completed"></div>
+                        </div>
+                        <div class="quadrant q1" onclick="zoomIn('q1', 'completed')">
+                            <h2>🔴 Completed - Urgent & Important</h2>
+                            <div class="task-count" id="q1-completed-count">0</div>
+                            <div id="q1-completed"></div>
+                        </div>
+                        <div class="quadrant q4" onclick="zoomIn('q4', 'completed')">
+                            <h2>🟢 Completed - Not Important, Not Urgent</h2>
+                            <div class="task-count" id="q4-completed-count">0</div>
+                            <div id="q4-completed"></div>
+                        </div>
+                        <div class="quadrant q3" onclick="zoomIn('q3', 'completed')">
+                            <h2>🔵 Completed - Urgent, Not Important</h2>
+                            <div class="task-count" id="q3-completed-count">0</div>
+                            <div id="q3-completed"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Task Modal -->
+    <div id="taskModal" class="modal">
+        <div class="modal-content">
+            <h3 id="modalTitle">Add New Task</h3>
+            <form id="taskForm">
+                <input type="hidden" id="taskId">
+                <div class="form-group">
+                    <label class="required">Task Title</label>
+                    <input type="text" id="taskTitle" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="taskDescription"></textarea>
+                </div>
+
+                <div class="form-group" id="quadrantSelector" style="display: none;">
+                    <label>Move to Quadrant</label>
+                    <select id="taskQuadrant">
+                        <option value="q1">🔴 Urgent & Important</option>
+                        <option value="q2">🟡 Important, Not Urgent</option>
+                        <option value="q3">🔵 Urgent, Not Important</option>
+                        <option value="q4">🟢 Not Important, Not Urgent</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="required">Priority within Quadrant</label>
+                    <select id="taskPriority" required>
+                        <option value="">-- Select --</option>
+                        <option value="high">High</option>
+                        <option value="normal" selected>Normal</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="required">Time Estimation</label>
+                    <div class="time-estimate">
+                        <input type="number" id="taskEstimateValue" min="0" step="0.5" placeholder="Value" required>
+                        <select id="taskEstimateUnit" required>
+                            <option value="hours">Hours</option>
+                            <option value="days">Days</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Deadline</label>
+                    <input type="date" id="taskDeadline">
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="taskRecurring">
+                        Recurring Task
+                    </label>
+                </div>
+
+                <div class="form-group" id="recurringOptions" style="display: none;">
+                    <label>Repeat Every</label>
+                    <select id="taskFrequency">
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                    </select>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn-primary" id="submitBtn">Add Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <h3>⚙️ Settings</h3>
+            <div class="form-group">
+                <label>Day Start Time (5:00 AM default)</label>
+                <input type="time" id="dayStartTime" value="05:00">
+            </div>
+            <div class="form-group">
+                <label>Day End Time (10:30 PM default)</label>
+                <input type="time" id="dayEndTime" value="22:30">
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="enableDayStartNotif" checked>
+                    Enable Day Start Notification
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="enableDayEndNotif" checked>
+                    Enable Day End Notification
+                </label>
+            </div>
+            <div class="form-group">
+                <label>Minimum Reminder Interval (minutes)</label>
+                <input type="number" id="minReminderInterval" value="15" min="5" max="120">
+                <small style="color:#666;font-size:12px;">Deadline reminders won't notify more frequently than this</small>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" onclick="closeSettingsModal()">Cancel</button>
+                <button type="button" class="btn-primary" onclick="saveSettings()">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div id="importModal" class="modal">
+        <div class="modal-content">
+            <h3>📥 Import from Excel/CSV</h3>
+            <div class="form-group">
+                <label>Select File (.xlsx, .xls, .csv, .tsv)</label>
+                <input type="file" id="importFile" accept=".xlsx,.xls,.csv,.tsv,.txt" style="width:100%;padding:10px;">
+            </div>
+            <div class="form-group">
+                <label>Import Instructions:</label>
+                <ul style="font-size:12px;color:#666;line-height:1.8;margin:10px 0;padding-left:20px;">
+                    <li>File should have columns: Title, Description, Quadrant, Tab, Priority, Deadline, etc.</li>
+                    <li>Tab names: home, official, self, or custom names (will create new tabs)</li>
+                    <li>Quadrant: Q1, Q2, Q3, Q4 (or Urgent+Important, etc.)</li>
+                    <li>Missing fields will use defaults</li>
+                    <li>First row should be headers</li>
+                </ul>
+            </div>
+            <div id="importPreview" style="display:none;max-height:200px;overflow:auto;background:#f9fafb;padding:10px;border-radius:6px;margin:10px 0;"></div>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" onclick="closeImportModal()">Cancel</button>
+                <button type="button" class="btn-primary" onclick="processImport()">Import Tasks</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script>
+        let tasks = JSON.parse(localStorage.getItem('tasks_v2')) || [];
+        let customTabs = JSON.parse(localStorage.getItem('customTabs')) || [];
+        let currentParentTab = 'today';
+        let currentSubTab = 'active';
+        let currentQuadrant = 'q1';
+        let zoomedQuadrant = null;
+        let editingTaskId = null;
+        let notificationInterval = null;
+        let lastNotificationTime = parseInt(localStorage.getItem('lastNotificationTime')) || 0;
+        
+        // Settings
+        let settings = JSON.parse(localStorage.getItem('appSettings')) || {
+            dayStartTime: '05:00',
+            dayEndTime: '22:30',
+            enableDayStartNotif: true,
+            enableDayEndNotif: true,
+            minReminderInterval: 15
+        };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initTabs();
+            renderTodayTasks();
+            startNotificationTimer();
+            loadSettings();
+            updateClearTabButton(); // Initialize clear button visibility
+            
+            document.getElementById('taskRecurring').addEventListener('change', (e) => {
+                document.getElementById('recurringOptions').style.display = 
+                    e.target.checked ? 'block' : 'none';
+            });
+
+            document.getElementById('taskForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+                addTask();
+            });
+
+            // Action button event listeners
+            document.getElementById('exportBtn').addEventListener('click', exportToExcel);
+            document.getElementById('importBtn').addEventListener('click', openImportModal);
+            document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
+            document.getElementById('clearTabBtn').addEventListener('click', clearTabTasks);
+
+            // Settings modal event listeners
+            document.getElementById('closeSettingsBtn').addEventListener('click', closeSettingsModal);
+            document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+
+            // Import modal event listeners
+            document.getElementById('closeImportBtn').addEventListener('click', closeImportModal);
+            document.getElementById('processImportBtn').addEventListener('click', processImport);
+        });
+
+        function initTabs() {
+            // Add custom tabs
+            const topTabsContainer = document.getElementById('topTabs');
+            const addTabBtn = topTabsContainer.querySelector('.add-tab');
+            
+            customTabs.forEach(tab => {
+                const tabEl = document.createElement('div');
+                tabEl.className = 'top-tab';
+                tabEl.dataset.tab = tab.id;
+                
+                // Create tab name span
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = tab.name;
+                tabEl.appendChild(nameSpan);
+                
+                // Add delete button for custom tabs
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-tab-btn';
+                deleteBtn.textContent = '×';
+                deleteBtn.title = 'Delete this tab';
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation(); // Prevent tab switch
+                    deleteCustomTab(tab.id);
+                };
+                tabEl.appendChild(deleteBtn);
+                
+                topTabsContainer.insertBefore(tabEl, addTabBtn);
+            });
+
+            // Setup top tab click handlers
+            document.querySelectorAll('.top-tab:not(.add-tab)').forEach(tab => {
+                tab.addEventListener('click', (e) => {
+                    // Only switch tab if not clicking delete button
+                    if (!e.target.classList.contains('delete-tab-btn')) {
+                        switchParentTab(tab.dataset.tab);
+                    }
+                });
+            });
+
+            // Setup sub tab click handlers
+            document.querySelectorAll('.sub-tab').forEach(tab => {
+                tab.addEventListener('click', () => switchSubTab(tab.dataset.subtab));
+            });
+
+            // Update priority indicators
+            updateTabPriorityIndicators();
+        }
+
+        function updateTabPriorityIndicators() {
+            document.querySelectorAll('.top-tab:not(.add-tab)').forEach(tab => {
+                const tabId = tab.dataset.tab;
+                
+                // Remove existing indicator
+                const existingIndicator = tab.querySelector('.priority-indicator');
+                if (existingIndicator) {
+                    existingIndicator.remove();
+                }
+                
+                // Check if this tab has high priority tasks
+                let hasHighPriority = false;
+                
+                if (tabId === 'today') {
+                    // For TODAY tab, check all incomplete tasks due today
+                    const today = new Date().toDateString();
+                    hasHighPriority = tasks.some(t => {
+                        if (t.completed || !t.deadline) return false;
+                        const deadline = new Date(t.deadline);
+                        return deadline.toDateString() === today && 
+                               (t.quadrant === 'q1' || t.mustHave);
+                    });
+                } else {
+                    // For other tabs, check incomplete tasks in that tab
+                    hasHighPriority = tasks.some(t => 
+                        !t.completed && 
+                        t.parentTab === tabId && 
+                        (t.quadrant === 'q1' || t.mustHave)
+                    );
+                }
+                
+                // Add indicator if needed
+                if (hasHighPriority) {
+                    const indicator = document.createElement('span');
+                    indicator.className = 'priority-indicator';
+                    indicator.textContent = '●';
+                    indicator.title = 'Has urgent/important tasks';
+                    tab.appendChild(indicator);
+                }
+            });
+        }
+
+        function switchParentTab(tabName) {
+            currentParentTab = tabName;
+            zoomedQuadrant = null;
+
+            // Update active state
+            document.querySelectorAll('.top-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+
+            if (tabName === 'today') {
+                document.getElementById('todayView').style.display = 'block';
+                document.getElementById('regularView').style.display = 'none';
+                renderTodayTasks();
+            } else {
+                document.getElementById('todayView').style.display = 'none';
+                document.getElementById('regularView').style.display = 'block';
+                currentSubTab = 'active';
+                document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+                document.querySelector('.sub-tab[data-subtab="active"]').classList.add('active');
+                renderTasks();
+            }
+        }
+
+        function switchSubTab(subtab) {
+            currentSubTab = subtab;
+            zoomedQuadrant = null;
+
+            document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+
+            document.getElementById('activeView').style.display = 
+                subtab === 'active' ? 'block' : 'none';
+            document.getElementById('completedView').style.display = 
+                subtab === 'completed' ? 'block' : 'none';
+
+            resetZoom();
+            renderTasks();
+        }
+
+        function renderTodayTasks() {
+            const container = document.getElementById('todayTasksList');
+            container.innerHTML = '';
+
+            // Get all active tasks from all tabs (except 'today')
+            const allActiveTasks = tasks.filter(t => 
+                !t.completed && 
+                t.parentTab !== 'today'
+            );
+
+            // Sort by priority and deadline
+            allActiveTasks.sort((a, b) => {
+                // Priority order: high > normal > low
+                const priorityOrder = { high: 3, normal: 2, low: 1 };
+                const aPriority = priorityOrder[a.priority] || 2;
+                const bPriority = priorityOrder[b.priority] || 2;
+                
+                if (aPriority !== bPriority) return bPriority - aPriority;
+                
+                // Then by deadline
+                if (a.deadline && b.deadline) {
+                    return new Date(a.deadline) - new Date(b.deadline);
+                }
+                return a.deadline ? -1 : 1;
+            });
+
+            // Take top 10
+            const top10 = allActiveTasks.slice(0, 10);
+
+            if (top10.length === 0) {
+                container.innerHTML = '<div class="empty-state">No tasks yet. Add tasks in other tabs!</div>';
+                return;
+            }
+
+            top10.forEach((task, index) => {
+                const div = document.createElement('div');
+                div.className = 'today-task-item';
+                
+                const tabName = getTabName(task.parentTab);
+                const quadrantName = getQuadrantName(task.quadrant);
+                
+            let badges = '';
+            if (task.mustHave) badges += '<span class="badge must-have">Must Have</span>';
+            if (task.goodToHave) badges += '<span class="badge good-to-have">Good to Have</span>';
+            if (task.recurring) badges += '<span class="badge recurring">↻ Recurring</span>';
+            if (task.priority === 'high') badges += '<span class="badge high-priority">High Priority</span>';                div.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: bold; margin-bottom: 5px;">${index + 1}. ${task.title}</div>
+                            <div style="font-size: 11px; color: #666;">
+                                📂 ${tabName} • ${quadrantName}
+                                ${task.deadline ? ' • 📅 ' + new Date(task.deadline).toLocaleDateString() : ''}
+                                ${task.estimateValue ? ' • ⏱️ ' + task.estimateValue + ' ' + task.estimateUnit : ''}
+                            </div>
+                            ${badges ? '<div class="task-badges" style="margin-top: 5px;">' + badges + '</div>' : ''}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+
+            // Update priority indicators after rendering
+            updateTabPriorityIndicators();
+        }
+
+        function getTabName(tabId) {
+            const defaultTabs = { home: '👨‍👩‍👧‍👦 Family', official: '💼 Official', self: '🌟 Self Interest' };
+            if (defaultTabs[tabId]) return defaultTabs[tabId];
+            const custom = customTabs.find(t => t.id === tabId);
+            return custom ? custom.name : tabId;
+        }
+
+        function getQuadrantName(q) {
+            const names = {
+                q1: '🔴 Urgent & Important',
+                q2: '🟡 Important, Not Urgent',
+                q3: '🔵 Urgent, Not Important',
+                q4: '🟢 Not Important, Not Urgent'
+            };
+            return names[q] || q;
+        }
+
+        function zoomIn(quadrant, view) {
+            zoomedQuadrant = quadrant;
+            const matrix = view === 'active' ? 
+                document.getElementById('matrixActive') : 
+                document.getElementById('matrixCompleted');
+            const backBtn = view === 'active' ? 
+                document.getElementById('backBtnActive') : 
+                document.getElementById('backBtnCompleted');
+            
+            matrix.classList.add('zoomed');
+            backBtn.classList.add('visible');
+            
+            ['q1', 'q2', 'q3', 'q4'].forEach(q => {
+                const quad = matrix.querySelector(`.${q}`);
+                if (q === quadrant) {
+                    quad.classList.add('zoomed');
+                    quad.classList.remove('hidden');
+                } else {
+                    quad.classList.add('hidden');
+                }
+            });
+        }
+
+        function zoomOut(view) {
+            zoomedQuadrant = null;
+            const matrix = view === 'active' ? 
+                document.getElementById('matrixActive') : 
+                document.getElementById('matrixCompleted');
+            const backBtn = view === 'active' ? 
+                document.getElementById('backBtnActive') : 
+                document.getElementById('backBtnCompleted');
+            
+            matrix.classList.remove('zoomed');
+            backBtn.classList.remove('visible');
+            
+            ['q1', 'q2', 'q3', 'q4'].forEach(q => {
+                const quad = matrix.querySelector(`.${q}`);
+                quad.classList.remove('hidden', 'zoomed');
+            });
+        }
+
+        function resetZoom() {
+            document.getElementById('matrixActive').classList.remove('zoomed');
+            document.getElementById('matrixCompleted').classList.remove('zoomed');
+            document.getElementById('backBtnActive').classList.remove('visible');
+            document.getElementById('backBtnCompleted').classList.remove('visible');
+            
+            ['q1', 'q2', 'q3', 'q4'].forEach(q => {
+                document.querySelectorAll(`.${q}`).forEach(quad => {
+                    quad.classList.remove('hidden', 'zoomed');
+                });
+            });
+        }
+
+        function openModal(quadrant) {
+            if (currentParentTab === 'today') {
+                alert('Cannot add tasks to TODAY view. Please select another tab.');
+                return;
+            }
+            editingTaskId = null;
+            currentQuadrant = quadrant;
+            document.getElementById('modalTitle').textContent = 'Add New Task';
+            document.getElementById('submitBtn').textContent = 'Add Task';
+            document.getElementById('quadrantSelector').style.display = 'none';
+            document.getElementById('taskModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('taskModal').classList.remove('active');
+            document.getElementById('taskForm').reset();
+            document.getElementById('taskId').value = '';
+            document.getElementById('recurringOptions').style.display = 'none';
+            document.getElementById('quadrantSelector').style.display = 'none';
+            editingTaskId = null;
+        }
+
+        function editTask(id) {
+            const task = tasks.find(t => t.id === id);
+            if (!task) return;
+
+            editingTaskId = id;
+            currentQuadrant = task.quadrant;
+            
+            // Fill form with existing values
+            document.getElementById('taskId').value = task.id;
+            document.getElementById('taskTitle').value = task.title;
+            document.getElementById('taskDescription').value = task.description || '';
+            document.getElementById('taskPriority').value = task.priority;
+            document.getElementById('taskEstimateValue').value = task.estimateValue || '';
+            document.getElementById('taskEstimateUnit').value = task.estimateUnit || 'hours';
+            document.getElementById('taskDeadline').value = task.deadline || '';
+            document.getElementById('taskRecurring').checked = task.recurring || false;
+            document.getElementById('taskFrequency').value = task.frequency || 'daily';
+            document.getElementById('taskQuadrant').value = task.quadrant;
+            
+            // Show/hide recurring options
+            document.getElementById('recurringOptions').style.display = 
+                task.recurring ? 'block' : 'none';
+            
+            // Show quadrant selector for editing
+            document.getElementById('quadrantSelector').style.display = 'block';
+            
+            // Update modal title and button
+            document.getElementById('modalTitle').textContent = 'Edit Task';
+            document.getElementById('submitBtn').textContent = 'Update Task';
+            
+            document.getElementById('taskModal').classList.add('active');
+        }
+
+        function addTask() {
+            // When editing, get quadrant from selector; otherwise from current quadrant
+            if (editingTaskId) {
+                currentQuadrant = document.getElementById('taskQuadrant').value;
+            }
+            
+            // Determine important/urgent from quadrant
+            const important = (currentQuadrant === 'q1' || currentQuadrant === 'q2');
+            const urgent = (currentQuadrant === 'q1' || currentQuadrant === 'q3');
+
+            if (editingTaskId) {
+                // Update existing task
+                const task = tasks.find(t => t.id === editingTaskId);
+                if (task) {
+                    task.quadrant = currentQuadrant;
+                    task.title = document.getElementById('taskTitle').value;
+                    task.description = document.getElementById('taskDescription').value;
+                    task.important = important;
+                    task.urgent = urgent;
+                    task.priority = document.getElementById('taskPriority').value;
+                    task.estimateValue = parseFloat(document.getElementById('taskEstimateValue').value);
+                    task.estimateUnit = document.getElementById('taskEstimateUnit').value;
+                    task.deadline = document.getElementById('taskDeadline').value;
+                    task.recurring = document.getElementById('taskRecurring').checked;
+                    task.frequency = document.getElementById('taskFrequency').value;
+                }
+            } else {
+                // Create new task
+                const task = {
+                    id: Date.now(),
+                    parentTab: currentParentTab,
+                    quadrant: currentQuadrant,
+                    title: document.getElementById('taskTitle').value,
+                    description: document.getElementById('taskDescription').value,
+                    important: important,
+                    urgent: urgent,
+                    priority: document.getElementById('taskPriority').value,
+                    estimateValue: parseFloat(document.getElementById('taskEstimateValue').value),
+                    estimateUnit: document.getElementById('taskEstimateUnit').value,
+                    deadline: document.getElementById('taskDeadline').value,
+                    mustHave: false,
+                    goodToHave: false,
+                    recurring: document.getElementById('taskRecurring').checked,
+                    frequency: document.getElementById('taskFrequency').value,
+                    completed: false,
+                    createdAt: new Date().toISOString(),
+                    completedAt: null,
+                    deadlineMissed: false,
+                    actualTime: null
+                };
+                tasks.push(task);
+            }
+
+            saveTasks();
+            renderTasks();
+            closeModal();
+        }
+
+        function completeTask(id) {
+            const task = tasks.find(t => t.id === id);
+            if (task) {
+                task.completed = true;
+                task.completedAt = new Date().toISOString();
+                
+                if (task.deadline) {
+                    const deadline = new Date(task.deadline);
+                    const completed = new Date(task.completedAt);
+                    task.deadlineMissed = completed > deadline;
+                }
+
+                if (task.recurring) {
+                    const newTask = { ...task };
+                    newTask.id = Date.now();
+                    newTask.completed = false;
+                    newTask.completedAt = null;
+                    newTask.deadlineMissed = false;
+                    
+                    if (task.deadline) {
+                        const nextDeadline = new Date(task.deadline);
+                        switch (task.frequency) {
+                            case 'daily':
+                                nextDeadline.setDate(nextDeadline.getDate() + 1);
+                                break;
+                            case 'weekly':
+                                nextDeadline.setDate(nextDeadline.getDate() + 7);
+                                break;
+                            case 'monthly':
+                                nextDeadline.setMonth(nextDeadline.getMonth() + 1);
+                                break;
+                        }
+                        newTask.deadline = nextDeadline.toISOString().split('T')[0];
+                    }
+                    
+                    tasks.push(newTask);
+                }
+
+                saveTasks();
+                renderTasks();
+                if (currentParentTab === 'today') renderTodayTasks();
+            }
+        }
+
+        function deleteTask(id) {
+            if (confirm('Are you sure you want to delete this task?')) {
+                tasks = tasks.filter(t => t.id !== id);
+                saveTasks();
+                renderTasks();
+                if (currentParentTab === 'today') renderTodayTasks();
+            }
+        }
+
+        function renderTasks() {
+            if (currentParentTab === 'today') return;
+
+            // Clear all quadrants
+            ['q1', 'q2', 'q3', 'q4'].forEach(q => {
+                document.getElementById(`${q}-tasks`).innerHTML = '';
+                document.getElementById(`${q}-completed`).innerHTML = '';
+            });
+
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            
+            const activeCounts = { q1: 0, q2: 0, q3: 0, q4: 0 };
+            const completedCounts = { q1: 0, q2: 0, q3: 0, q4: 0 };
+
+            // Filter tasks for current parent tab
+            const tabTasks = tasks.filter(t => t.parentTab === currentParentTab);
+
+            tabTasks.forEach(task => {
+                const taskEl = createTaskElement(task, today);
+                
+                if (task.completed) {
+                    document.getElementById(`${task.quadrant}-completed`).appendChild(taskEl);
+                    completedCounts[task.quadrant]++;
+                } else {
+                    document.getElementById(`${task.quadrant}-tasks`).appendChild(taskEl);
+                    activeCounts[task.quadrant]++;
+                }
+            });
+
+            // Update counts
+            ['q1', 'q2', 'q3', 'q4'].forEach(q => {
+                const activeCount = document.getElementById(`${q}-count`);
+                const completedCount = document.getElementById(`${q}-completed-count`);
+                
+                if (activeCount) activeCount.textContent = activeCounts[q];
+                if (completedCount) completedCount.textContent = completedCounts[q];
+            });
+
+            // Empty states
+            ['q1', 'q2', 'q3', 'q4'].forEach(q => {
+                const activeContainer = document.getElementById(`${q}-tasks`);
+                const completedContainer = document.getElementById(`${q}-completed`);
+                
+                if (activeContainer.children.length === 0) {
+                    activeContainer.innerHTML = '<div class="empty-state">No tasks</div>';
+                }
+                if (completedContainer.children.length === 0) {
+                    completedContainer.innerHTML = '<div class="empty-state">No completed tasks</div>';
+                }
+            });
+
+            // Update priority indicators after rendering
+            updateTabPriorityIndicators();
+        }
+
+        function createTaskElement(task, today) {
+            const div = document.createElement('div');
+            div.className = 'task';
+            if (task.completed) div.classList.add('completed');
+
+            if (!task.completed && task.deadline) {
+                const deadline = new Date(task.deadline);
+                if (deadline < today) div.classList.add('overdue');
+            }
+
+            let badges = '';
+            if (task.mustHave) badges += '<span class="badge must-have">Must Have</span>';
+            if (task.goodToHave) badges += '<span class="badge good-to-have">Good to Have</span>';
+            if (task.recurring) badges += '<span class="badge recurring">↻ Recurring</span>';
+            if (task.priority === 'high') badges += '<span class="badge priority-high">High</span>';
+            if (task.priority === 'low') badges += '<span class="badge priority-low">Low</span>';
+
+            let details = '';
+            if (task.deadline) {
+                const deadline = new Date(task.deadline);
+                const isToday = deadline.toDateString() === today.toDateString();
+                details += `📅 ${isToday ? 'Today' : deadline.toLocaleDateString()}`;
+            }
+            if (task.estimateValue) {
+                details += ` • ⏱️ ${task.estimateValue} ${task.estimateUnit}`;
+            }
+
+            let statusInfo = '';
+            if (task.completed) {
+                statusInfo = task.deadlineMissed ? 
+                    '<span style="color: #ef4444;">⚠️ Missed</span>' : 
+                    '<span style="color: #10b981;">✅ On Time</span>';
+            }
+
+            div.innerHTML = `
+                <div class="task-title">${task.title}</div>
+                ${task.description ? `<div style="font-size: 11px; color: #666; margin-bottom: 5px;">${task.description}</div>` : ''}
+                ${badges ? `<div class="task-badges">${badges}</div>` : ''}
+                ${details ? `<div class="task-details">${details}</div>` : ''}
+                ${statusInfo ? `<div class="task-details">${statusInfo}</div>` : ''}
+                ${!task.completed ? `
+                    <div class="task-actions">
+                        <button class="btn-edit" onclick="editTask(${task.id})">✏️ Edit</button>
+                        <button class="btn-complete" onclick="completeTask(${task.id})">✓ Complete</button>
+                        <button class="btn-delete" onclick="deleteTask(${task.id})">🗑 Delete</button>
+                    </div>
+                ` : ''}
+            `;
+
+            return div;
+        }
+
+        function saveTasks() {
+            localStorage.setItem('tasks_v2', JSON.stringify(tasks));
+        }
+
+        function saveCustomTabs() {
+            localStorage.setItem('customTabs', JSON.stringify(customTabs));
+        }
+
+        function addNewTab() {
+            const tabName = prompt('Enter new tab name:');
+            if (tabName && tabName.trim()) {
+                const tabId = 'custom_' + Date.now();
+                customTabs.push({ id: tabId, name: tabName.trim() });
+                saveCustomTabs();
+                
+                // Recreate tabs
+                location.reload();
+            }
+        }
+
+        function deleteCustomTab(tabId) {
+            // Find tab name for confirmation message
+            const tab = customTabs.find(t => t.id === tabId);
+            if (!tab) return;
+            
+            // Count tasks in this tab
+            const tabTasks = tasks.filter(t => t.parentTab === tabId);
+            const taskCount = tabTasks.length;
+            
+            // Confirm deletion
+            let confirmMessage = `⚠️ Delete tab "${tab.name}"?`;
+            if (taskCount > 0) {
+                confirmMessage += `\n\nThis tab contains ${taskCount} task(s).`;
+                confirmMessage += `\n\nWhat would you like to do with the tasks?\n\n`;
+                confirmMessage += `Click OK to DELETE tab and all its tasks\n`;
+                confirmMessage += `Click Cancel to keep everything`;
+            }
+            
+            if (confirm(confirmMessage)) {
+                // Remove tab from custom tabs
+                customTabs = customTabs.filter(t => t.id !== tabId);
+                saveCustomTabs();
+                
+                // Remove all tasks in this tab
+                if (taskCount > 0) {
+                    tasks = tasks.filter(t => t.parentTab !== tabId);
+                    saveTasks();
+                }
+                
+                // If currently viewing this tab, switch to home
+                if (currentParentTab === tabId) {
+                    currentParentTab = 'home';
+                }
+                
+                // Reload to refresh UI
+                location.reload();
+            }
+        }
+
+        function exportToExcel() {
+            // Create CSV export that can be copied and pasted into Excel
+            try {
+                let csvContent = '';
+                
+                // Add export header
+                const exportDate = new Date().toLocaleString();
+                csvContent = `Eisenhower Task Manager Export\n`;
+                csvContent += `Export Date: ${exportDate}\n`;
+                csvContent += `Total Tasks: ${tasks.length}\n\n`;
+                csvContent += `${'='.repeat(80)}\n\n`;
+                
+                // Get all unique parent tabs
+                const allTabs = ['home', 'official', 'self', ...customTabs.map(t => t.id)];
+                
+                allTabs.forEach(tabId => {
+                    const tabName = getTabName(tabId);
+                    const tabTasks = tasks.filter(t => t.parentTab === tabId);
+                    
+                    if (tabTasks.length === 0) return;
+                    
+                    // Add tab header
+                    csvContent += `TAB: ${tabName.toUpperCase()}\n`;
+                    csvContent += `${'-'.repeat(80)}\n\n`;
+                    
+                    // Active tasks
+                    const activeTasks = tabTasks.filter(t => !t.completed);
+                    if (activeTasks.length > 0) {
+                        csvContent += `ACTIVE TASKS (${activeTasks.length})\n`;
+                        csvContent += `Title\tDescription\tQuadrant\tPriority\tEstimate\tDeadline\tMust Have\tRecurring\n`;
+                        activeTasks.forEach(t => {
+                            const title = (t.title || '').replace(/\t/g, ' ').replace(/\n/g, ' ');
+                            const desc = (t.description || '').replace(/\t/g, ' ').replace(/\n/g, ' ');
+                            const quadrant = getQuadrantName(t.quadrant);
+                            const estimate = `${t.estimateValue} ${t.estimateUnit}`;
+                            const deadline = t.deadline || 'None';
+                            const mustHave = t.mustHave ? 'Yes' : 'No';
+                            const recurring = t.recurring ? t.frequency : 'No';
+                            csvContent += `${title}\t${desc}\t${quadrant}\t${t.priority}\t${estimate}\t${deadline}\t${mustHave}\t${recurring}\n`;
+                        });
+                        csvContent += '\n';
+                    }
+                    
+                    // Completed tasks
+                    const completedTasks = tabTasks.filter(t => t.completed);
+                    if (completedTasks.length > 0) {
+                        csvContent += `COMPLETED TASKS (${completedTasks.length})\n`;
+                        csvContent += `Title\tDescription\tQuadrant\tPriority\tEstimate\tCompleted Date\tStatus\n`;
+                        completedTasks.forEach(t => {
+                            const title = (t.title || '').replace(/\t/g, ' ').replace(/\n/g, ' ');
+                            const desc = (t.description || '').replace(/\t/g, ' ').replace(/\n/g, ' ');
+                            const quadrant = getQuadrantName(t.quadrant);
+                            const estimate = `${t.estimateValue} ${t.estimateUnit}`;
+                            const completed = new Date(t.completedAt).toLocaleDateString();
+                            const status = t.deadlineMissed ? 'Missed Deadline' : 'On Time';
+                            csvContent += `${title}\t${desc}\t${quadrant}\t${t.priority}\t${estimate}\t${completed}\t${status}\n`;
+                        });
+                        csvContent += '\n';
+                    }
+                    
+                    csvContent += `${'='.repeat(80)}\n\n`;
+                });
+                
+                // Show export modal with data (clipboard API doesn't work reliably in WebView)
+                showExportModal(csvContent);
+                
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('❌ Export failed: ' + error.message);
+            }
+        }
+        
+        function showExportModal(content) {
+            // Create a modal to display export data
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;padding:15px;';
+            
+            const container = document.createElement('div');
+            container.style.cssText = 'background:white;border-radius:12px;padding:20px;max-width:600px;width:100%;max-height:85vh;display:flex;flex-direction:column;';
+            
+            const title = document.createElement('h3');
+            title.textContent = '📊 Export to Excel';
+            title.style.cssText = 'margin:0 0 10px 0;color:#667eea;font-size:18px;';
+            
+            const instructions = document.createElement('div');
+            instructions.innerHTML = `
+                <p style="margin:0 0 8px 0;font-size:13px;color:#666;">
+                    <strong>How to use:</strong>
+                </p>
+                <ol style="margin:0 0 12px 0;padding-left:20px;font-size:12px;color:#666;line-height:1.6;">
+                    <li>Tap and hold on the text below until "Select All" appears</li>
+                    <li>Tap "Select All" then "Copy"</li>
+                    <li>Open Excel or Google Sheets</li>
+                    <li>Paste (Ctrl+V or Cmd+V)</li>
+                    <li>Data will be organized in columns automatically</li>
+                </ol>
+            `;
+            
+            const textarea = document.createElement('textarea');
+            textarea.value = content;
+            textarea.style.cssText = 'width:100%;flex:1;padding:12px;border:2px solid #667eea;border-radius:8px;font-family:monospace;font-size:11px;resize:none;background:#f9fafb;';
+            textarea.readOnly = true;
+            
+            // Auto-select on focus
+            textarea.addEventListener('focus', function() {
+                this.select();
+            });
+            
+            const stats = document.createElement('div');
+            const lines = content.split('\n').length;
+            const chars = content.length;
+            stats.textContent = `${lines} lines • ${chars} characters`;
+            stats.style.cssText = 'margin:8px 0;font-size:11px;color:#999;text-align:center;';
+            
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = 'margin-top:12px;display:flex;gap:10px;';
+            
+            const selectBtn = document.createElement('button');
+            selectBtn.textContent = '� Select All';
+            selectBtn.style.cssText = 'flex:1;padding:12px;background:#667eea;color:white;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px;';
+            selectBtn.onclick = function() {
+                textarea.focus();
+                textarea.select();
+                selectBtn.textContent = '✅ Selected!';
+                setTimeout(() => { selectBtn.textContent = '� Select All'; }, 2000);
+            };
+            
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = 'Close';
+            closeBtn.style.cssText = 'flex:1;padding:12px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px;';
+            closeBtn.onclick = function() {
+                document.body.removeChild(modal);
+            };
+            
+            buttonContainer.appendChild(selectBtn);
+            buttonContainer.appendChild(closeBtn);
+            
+            container.appendChild(title);
+            container.appendChild(instructions);
+            container.appendChild(textarea);
+            container.appendChild(stats);
+            container.appendChild(buttonContainer);
+            modal.appendChild(container);
+            
+            // Close on background click
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    document.body.removeChild(modal);
+                }
+            });
+            
+            document.body.appendChild(modal);
+            
+            // Auto-focus and select after a short delay
+            setTimeout(() => {
+                textarea.focus();
+                textarea.select();
+            }, 100);
+        }
+
+        // Deadline Notification System
+        function startNotificationTimer() {
+            // Check immediately
+            checkDeadlineNotifications();
+            
+            // Then check periodically
+            notificationInterval = setInterval(checkDeadlineNotifications, 60000); // Check every minute
+        }
+
+        function checkDeadlineNotifications() {
+            const now = new Date();
+            const currentHour = now.getHours();
+            const currentMinute = now.getMinutes();
+            const currentTime = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+            
+            // Parse day start and end times from settings
+            const [startHour, startMinute] = settings.dayStartTime.split(':').map(Number);
+            const [endHour, endMinute] = settings.dayEndTime.split(':').map(Number);
+            
+            // Check if we're outside active hours
+            const startTimeMinutes = startHour * 60 + startMinute;
+            const endTimeMinutes = endHour * 60 + endMinute;
+            const currentTimeMinutes = currentHour * 60 + currentMinute;
+            
+            if (currentTimeMinutes < startTimeMinutes || currentTimeMinutes > endTimeMinutes) {
+                return; // Outside active hours
+            }
+            
+            // Day Start Notification
+            if (settings.enableDayStartNotif && Math.abs(currentTimeMinutes - startTimeMinutes) < 5) {
+                const lastDayStart = localStorage.getItem('lastDayStartNotification');
+                const todayStr = now.toDateString();
+                if (lastDayStart !== todayStr) {
+                    const tasksDueToday = tasks.filter(t => {
+                        if (t.completed || !t.deadline) return false;
+                        const deadline = new Date(t.deadline);
+                        return deadline.toDateString() === todayStr;
+                    });
+                    
+                    if (tasksDueToday.length > 0) {
+                        alert(`☀️ GOOD MORNING!\n\nYou have ${tasksDueToday.length} task${tasksDueToday.length > 1 ? 's' : ''} due today.\n\nLet's make it count! 💪`);
+                        localStorage.setItem('lastDayStartNotification', todayStr);
+                    }
+                }
+            }
+            
+            // Day End Notification
+            if (settings.enableDayEndNotif && Math.abs(currentTimeMinutes - endTimeMinutes) < 5) {
+                const lastDayEnd = localStorage.getItem('lastDayEndNotification');
+                const todayStr = now.toDateString();
+                if (lastDayEnd !== todayStr) {
+                    const incompleteTasks = tasks.filter(t => {
+                        if (t.completed || !t.deadline) return false;
+                        const deadline = new Date(t.deadline);
+                        return deadline.toDateString() === todayStr;
+                    });
+                    
+                    if (incompleteTasks.length > 0) {
+                        alert(`🌙 DAY ENDING SOON!\n\n${incompleteTasks.length} task${incompleteTasks.length > 1 ? 's' : ''} still pending today.\n\nReview and plan for tomorrow.`);
+                        localStorage.setItem('lastDayEndNotification', todayStr);
+                    }
+                }
+            }
+            
+            // Regular deadline reminders using minReminderInterval
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const endOfActiveHours = new Date(today);
+            endOfActiveHours.setHours(endHour, endMinute, 0, 0);
+            
+            // Calculate hours left in active day
+            const hoursLeft = Math.ceil((endOfActiveHours - now) / (1000 * 60 * 60));
+            
+            if (hoursLeft <= 0) return; // Active hours are over
+            
+            // Use configured minimum reminder interval
+            const notificationIntervalMinutes = Math.max(settings.minReminderInterval, hoursLeft * 60 / 4); // At least minReminderInterval, or 1/4 of remaining time
+            
+            // Check if enough time has passed since last notification
+            const timeSinceLastNotification = (now - lastNotificationTime) / (1000 * 60);
+            if (lastNotificationTime > 0 && timeSinceLastNotification < notificationIntervalMinutes) {
+                return; // Not time yet
+            }
+            
+            // Get tasks due today that are not completed
+            const tasksDueToday = tasks.filter(t => {
+                if (t.completed || !t.deadline) return false;
+                const deadline = new Date(t.deadline);
+                return deadline.toDateString() === today.toDateString();
+            });
+            
+            if (tasksDueToday.length > 0) {
+                showDeadlineNotification(tasksDueToday, hoursLeft);
+                lastNotificationTime = now.getTime();
+                localStorage.setItem('lastNotificationTime', lastNotificationTime.toString());
+            }
+        }
+
+        function showDeadlineNotification(tasksDueToday, hoursLeft) {
+            const taskCount = tasksDueToday.length;
+            const taskList = tasksDueToday.slice(0, 3).map(t => `• ${t.title}`).join('\n');
+            const moreText = taskCount > 3 ? `\n...and ${taskCount - 3} more` : '';
+            
+            const message = `⏰ DEADLINE REMINDER\n\n${taskCount} task${taskCount > 1 ? 's' : ''} due TODAY!\n${hoursLeft} hour${hoursLeft > 1 ? 's' : ''} left.\n\n${taskList}${moreText}`;
+            
+            // Show alert
+            alert(message);
+            
+            // Try to show browser notification if supported (won't work in React Native WebView)
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('Task Deadline Reminder', {
+                    body: `${taskCount} task${taskCount > 1 ? 's' : ''} due today! ${hoursLeft} hours left.`,
+                    icon: '📋',
+                    tag: 'deadline-reminder'
+                });
+            }
+        }
+
+        // Request notification permission on first load (if supported)
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+
+        // Settings Modal Functions
+        function openSettingsModal() {
+            document.getElementById('settingsModal').classList.add('active');
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').classList.remove('active');
+        }
+
+        function loadSettings() {
+            document.getElementById('dayStartTime').value = settings.dayStartTime;
+            document.getElementById('dayEndTime').value = settings.dayEndTime;
+            document.getElementById('enableDayStartNotif').checked = settings.enableDayStartNotif;
+            document.getElementById('enableDayEndNotif').checked = settings.enableDayEndNotif;
+            document.getElementById('minReminderInterval').value = settings.minReminderInterval;
+        }
+
+        function saveSettings() {
+            settings = {
+                dayStartTime: document.getElementById('dayStartTime').value,
+                dayEndTime: document.getElementById('dayEndTime').value,
+                enableDayStartNotif: document.getElementById('enableDayStartNotif').checked,
+                enableDayEndNotif: document.getElementById('enableDayEndNotif').checked,
+                minReminderInterval: parseInt(document.getElementById('minReminderInterval').value)
+            };
+            localStorage.setItem('appSettings', JSON.stringify(settings));
+            closeSettingsModal();
+            alert('✅ Settings saved successfully!');
+        }
+
+        // Import Modal Functions
+        function openImportModal() {
+            document.getElementById('importModal').classList.add('active');
+        }
+
+        function closeImportModal() {
+            document.getElementById('importModal').classList.remove('active');
+            document.getElementById('importFile').value = '';
+            document.getElementById('importPreview').style.display = 'none';
+        }
+
+        function processImport() {
+            const fileInput = document.getElementById('importFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('⚠️ Please select a file to import');
+                return;
+            }
+
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    let data;
+                    const fileName = file.name.toLowerCase();
+                    
+                    if (fileName.endsWith('.csv') || fileName.endsWith('.tsv') || fileName.endsWith('.txt')) {
+                        // Parse CSV/TSV
+                        const text = e.target.result;
+                        const delimiter = fileName.endsWith('.tsv') ? '\t' : ',';
+                        data = parseCSV(text, delimiter);
+                    } else {
+                        // Parse Excel
+                        const workbook = XLSX.read(e.target.result, { type: 'binary' });
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        data = XLSX.utils.sheet_to_json(firstSheet);
+                    }
+                    
+                    if (data && data.length > 0) {
+                        importTasks(data);
+                    } else {
+                        alert('⚠️ No data found in file');
+                    }
+                } catch (error) {
+                    console.error('Import error:', error);
+                    alert('❌ Failed to import file: ' + error.message);
+                }
+            };
+            
+            if (file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.tsv') || file.name.toLowerCase().endsWith('.txt')) {
+                reader.readAsText(file);
+            } else {
+                reader.readAsBinaryString(file);
+            }
+        }
+
+        function parseCSV(text, delimiter = ',') {
+            const lines = text.split('\n').filter(line => line.trim());
+            if (lines.length < 2) return [];
+            
+            const headers = lines[0].split(delimiter).map(h => h.trim().replace(/['"]/g, ''));
+            const data = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(delimiter).map(v => v.trim().replace(/['"]/g, ''));
+                const row = {};
+                headers.forEach((header, index) => {
+                    row[header] = values[index] || '';
+                });
+                data.push(row);
+            }
+            
+            return data;
+        }
+
+        function importTasks(data) {
+            let imported = 0;
+            let newTabsCreated = [];
+            
+            data.forEach(row => {
+                // Map column names (case-insensitive)
+                const getField = (possibleNames) => {
+                    for (let name of possibleNames) {
+                        const key = Object.keys(row).find(k => k.toLowerCase() === name.toLowerCase());
+                        if (key && row[key]) return row[key];
+                    }
+                    return '';
+                };
+                
+                const title = getField(['Title', 'Task', 'Name', 'Task Title']);
+                if (!title) return; // Skip rows without title
+                
+                const description = getField(['Description', 'Desc', 'Details']);
+                let tabName = getField(['Tab', 'Category', 'Project', 'ParentTab']).toLowerCase();
+                let quadrant = getField(['Quadrant', 'Q', 'Priority Level']).toUpperCase();
+                
+                // Map quadrant names
+                if (quadrant.includes('URGENT') && quadrant.includes('IMPORTANT')) quadrant = 'Q1';
+                else if (quadrant.includes('IMPORTANT') && quadrant.includes('NOT URGENT')) quadrant = 'Q2';
+                else if (quadrant.includes('URGENT') && quadrant.includes('NOT IMPORTANT')) quadrant = 'Q3';
+                else if (quadrant.includes('NOT')) quadrant = 'Q4';
+                else if (!quadrant.match(/Q[1-4]/)) quadrant = 'Q2'; // Default
+                
+                quadrant = quadrant.toLowerCase();
+                
+                // Handle tab creation
+                if (!tabName || tabName === '') tabName = 'home';
+                if (!['home', 'official', 'self', 'today'].includes(tabName)) {
+                    // Check if custom tab exists
+                    if (!customTabs.find(t => t.id === tabName)) {
+                        customTabs.push({ id: tabName, name: tabName.charAt(0).toUpperCase() + tabName.slice(1), emoji: '📁' });
+                        newTabsCreated.push(tabName);
+                    }
+                }
+                
+                const task = {
+                    id: Date.now() + imported,
+                    parentTab: tabName,
+                    quadrant: quadrant,
+                    title: title,
+                    description: description,
+                    important: quadrant === 'q1' || quadrant === 'q2',
+                    urgent: quadrant === 'q1' || quadrant === 'q3',
+                    priority: getField(['Priority']).toLowerCase() || 'normal',
+                    estimateValue: parseInt(getField(['Estimate', 'Time', 'Hours'])) || 1,
+                    estimateUnit: getField(['Unit', 'Time Unit']) || 'hours',
+                    deadline: getField(['Deadline', 'Due Date', 'Date']) || '',
+                    mustHave: getField(['Must Have', 'Critical']).toLowerCase() === 'yes',
+                    goodToHave: false,
+                    recurring: getField(['Recurring', 'Repeat']).toLowerCase() === 'yes',
+                    frequency: getField(['Frequency']).toLowerCase() || 'daily',
+                    completed: false,
+                    createdAt: new Date().toISOString(),
+                    completedAt: null,
+                    deadlineMissed: false,
+                    actualTime: ''
+                };
+                
+                tasks.push(task);
+                imported++;
+            });
+            
+            if (imported > 0) {
+                saveTasks();
+                if (newTabsCreated.length > 0) {
+                    saveCustomTabs();
+                }
+                closeImportModal();
+                location.reload(); // Reload to show new tabs and tasks
+                alert(`✅ Successfully imported ${imported} task(s)${newTabsCreated.length > 0 ? '\n📁 Created ' + newTabsCreated.length + ' new tab(s): ' + newTabsCreated.join(', ') : ''}`);
+            } else {
+                alert('⚠️ No valid tasks found to import');
+            }
+        }
+
+        // Clear Tab Tasks Function
+        function clearTabTasks() {
+            if (currentParentTab === 'today') {
+                alert('⚠️ Cannot clear TODAY view. Please switch to a specific tab.');
+                return;
+            }
+            
+            const tabName = getTabName(currentParentTab);
+            const tabTasks = tasks.filter(t => t.parentTab === currentParentTab);
+            
+            if (tabTasks.length === 0) {
+                alert(`ℹ️ No tasks to clear in "${tabName}"`);
+                return;
+            }
+            
+            if (confirm(`⚠️ Are you sure you want to delete ALL ${tabTasks.length} task(s) from "${tabName}"?\n\nThis action cannot be undone!`)) {
+                tasks = tasks.filter(t => t.parentTab !== currentParentTab);
+                saveTasks();
+                renderTasks();
+                alert(`✅ Cleared all tasks from "${tabName}"`);
+            }
+        }
+
+        // Show/Hide Clear Tab button based on current tab
+        function updateClearTabButton() {
+            const clearBtn = document.getElementById('clearTabBtn');
+            const importBtn = document.getElementById('importBtn');
+            
+            if (currentParentTab !== 'today') {
+                clearBtn.style.display = 'inline-block';
+                importBtn.style.display = 'inline-block';
+            } else {
+                clearBtn.style.display = 'none';
+                importBtn.style.display = 'none';
+            }
+        }
+
+        // Update the switchParentTab function to show/hide buttons
+        const originalSwitchParentTab = switchParentTab;
+        switchParentTab = function(tabId) {
+            originalSwitchParentTab(tabId);
+            updateClearTabButton();
+        };
+
+        // PWA - Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(registration => {
+                        console.log('✅ PWA: Service Worker registered successfully');
+                        console.log('Scope:', registration.scope);
+                        
+                        // Check for updates every time app opens
+                        registration.update();
+                        
+                        // Listen for updates
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            console.log('🔄 PWA: New version found, updating...');
+                            
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'activated') {
+                                    // Show update notification
+                                    if (confirm('📱 New version available! Reload to update?')) {
+                                        window.location.reload();
+                                    }
+                                }
+                            });
+                        });
+                    })
+                    .catch(error => {
+                        console.log('❌ PWA: Service Worker registration failed:', error);
+                    });
+            });
+            
+            // Auto-reload when new service worker takes control
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!refreshing) {
+                    refreshing = true;
+                    console.log('🔄 PWA: New version activated, reloading...');
+                    window.location.reload();
+                }
+            });
+        }
+
+        // PWA - Install Prompt
+        let deferredPrompt;
+        const installPrompt = document.getElementById('installPrompt');
+        const installBtn = document.getElementById('installBtn');
+        const dismissBtn = document.getElementById('dismissBtn');
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // Check if user has dismissed before
+            const dismissed = localStorage.getItem('installPromptDismissed');
+            const dismissedTime = localStorage.getItem('installPromptDismissedTime');
+            
+            // Show prompt if never dismissed, or if dismissed more than 7 days ago
+            const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+            if (!dismissed || (dismissedTime && parseInt(dismissedTime) < sevenDaysAgo)) {
+                // Show prompt after 3 seconds (let user see the app first)
+                setTimeout(() => {
+                    installPrompt.classList.add('show');
+                }, 3000);
+            }
+            
+            console.log('💡 PWA: App can be installed');
+        });
+
+        // Install button click
+        installBtn.addEventListener('click', async () => {
+            if (!deferredPrompt) {
+                // On iOS, show manual instructions
+                alert('📱 To install:\n\n1. Tap the Share button (⬆️)\n2. Scroll down\n3. Tap "Add to Home Screen"\n4. Tap "Add"');
+                installPrompt.classList.remove('show');
+                return;
+            }
+
+            // Show install prompt (Android/Desktop)
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log(`User response: ${outcome}`);
+            
+            deferredPrompt = null;
+            installPrompt.classList.remove('show');
+        });
+
+        // Dismiss button click
+        dismissBtn.addEventListener('click', () => {
+            installPrompt.classList.remove('show');
+            localStorage.setItem('installPromptDismissed', 'true');
+            localStorage.setItem('installPromptDismissedTime', Date.now().toString());
+        });
+
+        // PWA - Track installation
+        window.addEventListener('appinstalled', () => {
+            console.log('🎉 PWA: App installed successfully!');
+            installPrompt.classList.remove('show');
+            deferredPrompt = null;
+            localStorage.setItem('appInstalled', 'true');
+        });
+    </script>
+</body>
+</html>

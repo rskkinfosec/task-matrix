@@ -1,0 +1,5 @@
+<!-- Placeholder splash - Replace with your own later -->
+<svg width="1284" height="2778" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1284" height="2778" fill="#4A90E2"/>
+  <text x="642" y="1500" font-size="200" text-anchor="middle" fill="white" font-family="Arial">WebView App</text>
+</svg>

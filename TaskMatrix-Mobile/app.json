@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "TaskMatrix by Kaushal RSK",
+    "slug": "taskmatrix-kaushal-rsk",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "description": "TaskMatrix - Eisenhower Task Manager by Kaushal RSK",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kaushalrsk.taskmatrix"
+    },
+    "android": {
+      "package": "com.kaushalrsk.taskmatrix"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "06b82f98-0078-4455-aff8-ad7fb450dc7b"
+      }
+    }
+  }
+}
