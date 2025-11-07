@@ -1,7 +1,7 @@
 // TaskMatrix Service Worker
-// Version 1.0.0
+// Version 1.0.2
 // ⚠️ IMPORTANT: Increment this version number when you make changes!
-const CACHE_NAME = 'taskmatrix-v1.0.0';
+const CACHE_NAME = 'taskmatrix-v1.0.2';
 const urlsToCache = [
   './',
   './index.html',
