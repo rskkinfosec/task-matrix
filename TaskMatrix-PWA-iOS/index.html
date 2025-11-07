@@ -2153,6 +2153,23 @@
         const installBtn = document.getElementById('installBtn');
         const dismissBtn = document.getElementById('dismissBtn');
 
+        // Detect iOS
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isInStandaloneMode = ('standalone' in window.navigator) && (window.navigator.standalone);
+
+        // Show prompt on iOS if not already installed
+        if (isIOS && !isInStandaloneMode) {
+            const dismissed = localStorage.getItem('installPromptDismissed');
+            const dismissedTime = localStorage.getItem('installPromptDismissedTime');
+            const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+            
+            if (!dismissed || (dismissedTime && parseInt(dismissedTime) < sevenDaysAgo)) {
+                setTimeout(() => {
+                    installPrompt.classList.add('show');
+                }, 3000);
+            }
+        }
+
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
