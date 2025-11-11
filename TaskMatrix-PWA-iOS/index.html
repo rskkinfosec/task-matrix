@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TaskMatrix by Kaushal RSK</title>
     
+    <!-- Security: Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdnjs.cloudflare.com;
+        style-src 'self' 'unsafe-inline';
+        connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://*.firebase.google.com;
+        img-src 'self' https: data:;
+        font-src 'self' data:;
+    ">
+    
     <!-- PWA Meta Tags -->
     <meta name="description" content="Eisenhower Matrix Task Manager - Organize tasks by urgency and importance">
     <meta name="author" content="Kaushal RSK">
@@ -1456,6 +1466,13 @@
                 return;
             }
 
+            // XSS Protection: Escape HTML in user input
+            const escapeHtml = (text) => {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            };
+
             top10.forEach((task, index) => {
                 const div = document.createElement('div');
                 div.className = 'today-task-item';
@@ -1467,10 +1484,15 @@
             if (task.mustHave) badges += '<span class="badge must-have">Must Have</span>';
             if (task.goodToHave) badges += '<span class="badge good-to-have">Good to Have</span>';
             if (task.recurring) badges += '<span class="badge recurring">↻ Recurring</span>';
-            if (task.priority === 'high') badges += '<span class="badge high-priority">High Priority</span>';                div.innerHTML = `
+            if (task.priority === 'high') badges += '<span class="badge high-priority">High Priority</span>';
+            
+            // Escape user-provided content to prevent XSS
+            const safeTitle = escapeHtml(task.title || '');
+            
+            div.innerHTML = `
                     <div style="display: flex; justify-content: space-between; align-items: start;">
                         <div style="flex: 1;">
-                            <div style="font-weight: bold; margin-bottom: 5px;">${index + 1}. ${task.title}</div>
+                            <div style="font-weight: bold; margin-bottom: 5px;">${index + 1}. ${safeTitle}</div>
                             <div style="font-size: 11px; color: #666;">
                                 📂 ${tabName} • ${quadrantName}
                                 ${task.deadline ? ' • 📅 ' + new Date(task.deadline).toLocaleDateString() : ''}
@@ -1790,6 +1812,13 @@
                 if (deadline < today) div.classList.add('overdue');
             }
 
+            // XSS Protection: Escape HTML in user input
+            const escapeHtml = (text) => {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            };
+
             let badges = '';
             if (task.mustHave) badges += '<span class="badge must-have">Must Have</span>';
             if (task.goodToHave) badges += '<span class="badge good-to-have">Good to Have</span>';
@@ -1814,9 +1843,13 @@
                     '<span style="color: #10b981;">✅ On Time</span>';
             }
 
+            // Escape user-provided content to prevent XSS
+            const safeTitle = escapeHtml(task.title || '');
+            const safeDescription = task.description ? escapeHtml(task.description) : '';
+
             div.innerHTML = `
-                <div class="task-title">${task.title}</div>
-                ${task.description ? `<div style="font-size: 11px; color: #666; margin-bottom: 5px;">${task.description}</div>` : ''}
+                <div class="task-title">${safeTitle}</div>
+                ${safeDescription ? `<div style="font-size: 11px; color: #666; margin-bottom: 5px;">${safeDescription}</div>` : ''}
                 ${badges ? `<div class="task-badges">${badges}</div>` : ''}
                 ${details ? `<div class="task-details">${details}</div>` : ''}
                 ${statusInfo ? `<div class="task-details">${statusInfo}</div>` : ''}
