@@ -2560,6 +2560,8 @@
         // ===== FIREBASE AUTHENTICATION & SYNC =====
         
         // Firebase Configuration
+        // Note: API key is safe to be public - it's restricted in Google Cloud Console
+        // to only work from authorized domains (rskkinfosec.github.io, localhost)
         const firebaseConfig = {
             apiKey: "AIzaSyA_RK15FWYWqetZgfgKgvkymj_rCmwb8OI",
             authDomain: "taskmatrix-48f1f.firebaseapp.com",
@@ -2998,6 +3000,11 @@
 
         // Find file on Google Drive by name
         async function findDriveFile(fileName) {
+            // Security check: Ensure user is authenticated and has valid token
+            if (!accessToken || !currentUser) {
+                throw new Error('Unauthorized: Not signed in or no access token');
+            }
+            
             const response = await fetch(
                 `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and trashed=false&spaces=drive&fields=files(id,name)`,
                 {
@@ -3017,6 +3024,11 @@
 
         // Create file on Google Drive
         async function createDriveFile(fileName, blob) {
+            // Security check: Ensure user is authenticated and has valid token
+            if (!accessToken || !currentUser) {
+                throw new Error('Unauthorized: Not signed in or no access token');
+            }
+            
             const metadata = {
                 name: fileName,
                 mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -3046,6 +3058,11 @@
 
         // Update existing file on Google Drive
         async function updateDriveFile(fileId, blob) {
+            // Security check: Ensure user is authenticated and has valid token
+            if (!accessToken || !currentUser) {
+                throw new Error('Unauthorized: Not signed in or no access token');
+            }
+            
             const response = await fetch(
                 `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
                 {
@@ -3067,6 +3084,11 @@
 
         // Download file from Google Drive
         async function downloadDriveFile(fileId) {
+            // Security check: Ensure user is authenticated and has valid token
+            if (!accessToken || !currentUser) {
+                throw new Error('Unauthorized: Not signed in or no access token');
+            }
+            
             const response = await fetch(
                 `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
                 {
