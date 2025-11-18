@@ -19,6 +19,7 @@
     
     <!-- iOS Specific Meta Tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="TaskMatrix">
     <!-- Use inline SVG as data URI to avoid 404 -->
@@ -1291,6 +1292,21 @@
             startNotificationTimer();
             loadSettings();
             updateClearTabButton(); // Initialize clear button visibility
+
+            // Re-check auth once DOM is ready; if already signed in, hide auth modal
+            setTimeout(() => {
+                try {
+                    if (auth && auth.currentUser) {
+                        console.log('🔁 DOM ready: user already signed in:', auth.currentUser.email);
+                        displayUserProfile(auth.currentUser);
+                        hideAuthModal();
+                    } else {
+                        console.log('🔁 DOM ready: no user currently signed in');
+                    }
+                } catch (err) {
+                    console.warn('⚠️ DOM ready auth check failed:', err);
+                }
+            }, 200);
             
             document.getElementById('taskRecurring').addEventListener('change', (e) => {
                 document.getElementById('recurringOptions').style.display = 
@@ -2691,10 +2707,14 @@
         console.log('🔥 Initializing Firebase...');
         console.log('🔍 Firebase object:', typeof firebase, firebase);
         
-        firebase.initializeApp(firebaseConfig);
+    firebase.initializeApp(firebaseConfig);
         console.log('✅ Firebase initialized successfully');
         
         const auth = firebase.auth();
+        // Ensure persistence is set to LOCAL so auth state persists across tabs and across reloads
+        auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+            .then(() => console.log('🔒 Firebase Auth persistence set to LOCAL'))
+            .catch(err => console.warn('⚠️ Failed to set auth persistence:', err));
         console.log('✅ Firebase Auth initialized:', auth);
         
         const googleProvider = new firebase.auth.GoogleAuthProvider();
@@ -2704,14 +2724,25 @@
         googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
         console.log('✅ Google Drive scope added');
 
-        // Auth state variables
+    // Decide which auth method to use
+    const isIosDevice = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isStandalonePWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    const shouldUseRedirectForAuth = isIosDevice || isStandalonePWA;
+    console.log(`🔐 Auth strategy: ${shouldUseRedirectForAuth ? 'redirect (iOS/PWA)' : 'popup (desktop/browser)'}`);
+
+    // Auth state variables
         let currentUser = null;
         let accessToken = null;
         let syncInProgress = false;
+    // Track sign-in state to avoid showing modal while sign-in is in progress
+    let signInInProgress = false;
         const DRIVE_FILE_NAME = 'taskmatrix-backup.xlsx';
 
         // Check if user has dismissed auth modal before
         function shouldShowAuthModal() {
+            // If a sign-in is currently ongoing or user is already authenticated, don't show modal
+            if (signInInProgress) return false;
+            if (auth && auth.currentUser) return false;
             const offlineMode = localStorage.getItem('offlineMode');
             const lastDismissed = localStorage.getItem('authModalDismissed');
             const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
@@ -2766,6 +2797,8 @@
 
         // Authentication state observer
         auth.onAuthStateChanged((user) => {
+            // Log state for debugging
+            console.log('🔁 onAuthStateChanged triggered. signInInProgress:', signInInProgress);
             if (user) {
                 // User is signed in
                 currentUser = user;
@@ -2797,11 +2830,16 @@
                 console.log('ℹ️ User signed out');
                 hideUserProfile();
                 
-                // Show auth modal if not in offline mode
-                if (!localStorage.getItem('offlineMode')) {
+                // Show auth modal if not in offline mode and a sign-in is not currently in progress
+                if (!localStorage.getItem('offlineMode') && !signInInProgress) {
                     setTimeout(() => showAuthModal(), 500);
+                } else if (signInInProgress) {
+                    // If a sign-in flow is in progress, log and avoid showing the modal
+                    console.log('⏳ Sign-in flow in progress, skipping auth modal');
                 }
             }
+            // More diagnostics
+            console.log('🔎 onAuthStateChanged final check: auth.currentUser =', auth.currentUser);
         });
 
         // Google Sign-In
@@ -2827,43 +2865,57 @@
                 e.stopPropagation();
                 
                 try {
+                    // Mark sign-in as started to prevent modal re-show and race conditions
+                    signInInProgress = true;
                     showSyncStatus('Signing in with Google...', 'syncing');
-                    console.log('📤 Calling signInWithRedirect (better for mobile)...');
-                    console.log('🔑 Using auth domain:', 'taskmatrix-48f1f.firebaseapp.com');
-                    
-                    // Use signInWithRedirect for better mobile support
-                    const result = await auth.signInWithRedirect(googleProvider);
-                    console.log('✅ Redirect returned:', result);
-                    
-                } catch (error) {
-                    console.error('❌ Sign-in error:', error);
-                    console.error('❌ Error code:', error.code);
-                    console.error('❌ Error message:', error.message);
-                    console.error('❌ Full error:', JSON.stringify(error));
-                    
-                    // Log more details
-                    console.error('❌ Error name:', error.name);
-                    console.error('❌ Error stack:', error.stack);
-                    
-                    showSyncStatus('Sign-in error: ' + error.code + ' - ' + error.message, 'error');
-                    
-                    // Fallback to popup
-                    console.log('📤 Fallback: Trying signInWithPopup...');
-                    try {
+
+                    if (shouldUseRedirectForAuth) {
+                        console.log('📤 Using signInWithRedirect (iOS / installed PWA)');
+                        await auth.signInWithRedirect(googleProvider);
+                        // Control never reaches here because page navigates away
+                    } else {
+                        console.log('📤 Using signInWithPopup (desktop/browser)');
                         const result = await auth.signInWithPopup(googleProvider);
+                        // Popup resolved; ensure persistence is set and update flags
+                        console.log('📘 signInWithPopup completed, result received');
                         console.log('✅ signInWithPopup returned:', result);
                         const credential = result.credential;
-                        accessToken = credential.accessToken;
-                        console.log('✅ Signed in successfully via popup');
+                        accessToken = credential?.accessToken || null;
                         hideAuthModal();
                         showSyncStatus('Signed in successfully!', 'success');
                         setTimeout(hideSyncStatus, 2000);
-                    } catch (popupError) {
-                        console.error('❌ Popup sign-in also failed:', popupError);
-                        console.error('❌ Popup error code:', popupError.code);
-                        showSyncStatus('Sign-in failed: ' + popupError.message, 'error');
-                        setTimeout(hideSyncStatus, 5000);
                     }
+                } catch (error) {
+                    console.error('❌ Sign-in error:', error);
+                    showSyncStatus('Sign-in failed: ' + error.message, 'error');
+                    setTimeout(hideSyncStatus, 4000);
+
+                    // Attempt fallback strategy if primary failed
+                    if (!shouldUseRedirectForAuth) {
+                        console.log('📤 Popup failed, trying redirect as fallback...');
+                        try {
+                            await auth.signInWithRedirect(googleProvider);
+                        } catch (redirectError) {
+                            console.error('❌ Redirect fallback also failed:', redirectError);
+                        }
+                    } else {
+                        console.log('📤 Redirect failed, trying popup as fallback...');
+                        try {
+                            const popupResult = await auth.signInWithPopup(googleProvider);
+                            console.log('✅ Popup fallback succeeded:', popupResult);
+                            accessToken = popupResult.credential?.accessToken || null;
+                            hideAuthModal();
+                            showSyncStatus('Signed in successfully!', 'success');
+                            setTimeout(hideSyncStatus, 2000);
+                        } catch (popupFallbackError) {
+                            console.error('❌ Popup fallback failed as well:', popupFallbackError);
+                        }
+                    }
+                } finally {
+                    // Sign-in attempt finished; reset flag after a small delay
+                    setTimeout(() => {
+                        signInInProgress = false;
+                    }, 500);
                 }
             }, true); // Use capture phase
             console.log('✅ Click listener added to Google Sign-In button');
@@ -2883,8 +2935,24 @@
         document.getElementById('showSignInBtn').addEventListener('click', () => {
             localStorage.removeItem('offlineMode');
             localStorage.removeItem('authModalDismissed');
-            showAuthModal();
+            // If a sign-in is in progress, wait, otherwise show modal
+            if (!signInInProgress) showAuthModal();
             console.log('🔓 Opening sign-in modal from prompt');
+        });
+
+        // When a user returns focus (e.g., closes popup or returns from redirect), re-check auth state
+        window.addEventListener('focus', () => {
+            console.log('🔎 Window focused, checking auth state...');
+            if (auth.currentUser) {
+                console.log('✅ Auth detected on focus:', auth.currentUser.email);
+                displayUserProfile(auth.currentUser);
+                hideAuthModal();
+            } else if (!localStorage.getItem('offlineMode') && !signInInProgress) {
+                console.log('ℹ️ No user found on focus, showing auth modal');
+                showAuthModal();
+            } else {
+                console.log('⏭️ Not showing auth modal on focus (offlineMode or sign-in in progress)');
+            }
         });
 
         // Logout
