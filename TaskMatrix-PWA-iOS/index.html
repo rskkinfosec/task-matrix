@@ -9,15 +9,8 @@
     <title>TaskMatrix by Kaushal RSK</title>
     
     <!-- Security: Content Security Policy -->
-    <meta http-equiv="Content-Security-Policy" content="
-        default-src 'self';
-        script-src 'self' 'unsafe-inline' https://www.gstatic.com https://*.gstatic.com https://*.firebaseapp.com https://*.firebase.google.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;
-        style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com;
-        connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://*.gstatic.com https://*.firebaseapp.com https://*.firebase.google.com https://accounts.google.com https://*.auth.firebase.com;
-        img-src 'self' https: data:;
-        font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com;
-        frame-src https://*.firebase.google.com https://accounts.google.com;
-    ">
+    <!-- CSP: Allow Firebase, Google Auth, and other necessary resources -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://*.gstatic.com https://*.firebaseapp.com https://*.firebase.google.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://apis.google.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; connect-src 'self' https://www.gstatic.com https://*.gstatic.com https://*.googleapis.com https://*.firebaseapp.com https://*.firebase.google.com https://accounts.google.com https://*.auth.firebase.com; img-src 'self' https: data:; font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; frame-src https://*.firebase.google.com https://accounts.google.com; form-action 'self' https://accounts.google.com https://*.firebase.google.com;">
     
     <!-- PWA Meta Tags -->
     <meta name="description" content="Eisenhower Matrix Task Manager - Organize tasks by urgency and importance">
