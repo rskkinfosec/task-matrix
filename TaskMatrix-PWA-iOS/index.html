@@ -11,11 +11,11 @@
     <!-- Security: Content Security Policy -->
     <meta http-equiv="Content-Security-Policy" content="
         default-src 'self';
-        script-src 'self' 'unsafe-inline' https://www.gstatic.com https://*.firebaseapp.com https://cdnjs.cloudflare.com;
-        style-src 'self' 'unsafe-inline';
+        script-src 'self' 'unsafe-inline' https://www.gstatic.com https://*.firebaseapp.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;
+        style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com;
         connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseapp.com https://*.firebase.google.com;
         img-src 'self' https: data:;
-        font-src 'self' data:;
+        font-src 'self' data: https://cdnjs.cloudflare.com;
     ">
     
     <!-- PWA Meta Tags -->
@@ -27,7 +27,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="TaskMatrix">
-    <link rel="apple-touch-icon" href="icon-192.png">
+    <!-- Use inline SVG as data URI to avoid 404 -->
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect fill=%22%23667eea%22 width=%22192%22 height=%22192%22/%3E%3Ctext x=%2296%22 y=%22120%22 font-size=%22100%22 fill=%22white%22 text-anchor=%22middle%22 font-weight=%22bold%22%3E📊%3C/text%3E%3C/svg%3E">
     
     <!-- Theme Colors -->
     <meta name="theme-color" content="#667eea">
