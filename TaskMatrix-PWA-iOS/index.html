@@ -980,7 +980,7 @@
     <div class="container">
         <h1>📊 Eisenhower Task Manager</h1>
 
-        <!-- User Profile -->
+        <!-- User Profile (shown when signed in) -->
         <div class="user-profile" id="userProfile">
             <img id="userPhoto" src="" alt="User">
             <div class="user-info">
@@ -988,6 +988,15 @@
                 <div class="user-email" id="userEmail"></div>
             </div>
             <button class="logout-btn" id="logoutBtn">Logout</button>
+        </div>
+
+        <!-- Sign In Button (shown when NOT signed in) -->
+        <div class="user-profile" id="signInPrompt" style="display: none;">
+            <div class="user-info" style="flex: 1;">
+                <div class="user-name">Not signed in</div>
+                <div class="user-email">Sign in to sync across devices</div>
+            </div>
+            <button class="logout-btn" id="showSignInBtn" style="background: #4285f4;">Sign In</button>
         </div>
 
         <!-- Sync Status -->
@@ -2762,6 +2771,14 @@
             console.log('📴 Continuing in offline mode');
         });
 
+        // Show Sign In Button Handler (for when user is in offline mode)
+        document.getElementById('showSignInBtn').addEventListener('click', () => {
+            localStorage.removeItem('offlineMode');
+            localStorage.removeItem('authModalDismissed');
+            showAuthModal();
+            console.log('🔓 Opening sign-in modal from prompt');
+        });
+
         // Logout
         document.getElementById('logoutBtn').addEventListener('click', async () => {
             if (confirm('Are you sure you want to sign out?')) {
@@ -2784,6 +2801,7 @@
         // Display user profile
         function displayUserProfile(user) {
             const profileEl = document.getElementById('userProfile');
+            const signInPromptEl = document.getElementById('signInPrompt');
             const photoEl = document.getElementById('userPhoto');
             const nameEl = document.getElementById('userName');
             const emailEl = document.getElementById('userEmail');
@@ -2793,6 +2811,7 @@
             emailEl.textContent = user.email;
             
             profileEl.classList.add('show');
+            signInPromptEl.style.display = 'none'; // Hide sign-in prompt
             
             // Update sync info in settings
             updateSyncInfo(user);
@@ -2800,7 +2819,11 @@
 
         // Hide user profile
         function hideUserProfile() {
-            document.getElementById('userProfile').classList.remove('show');
+            const profileEl = document.getElementById('userProfile');
+            const signInPromptEl = document.getElementById('signInPrompt');
+            
+            profileEl.classList.remove('show');
+            signInPromptEl.style.display = 'flex'; // Show sign-in prompt
             
             // Update sync info in settings
             updateSyncInfo(null);
