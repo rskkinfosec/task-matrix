@@ -1491,6 +1491,12 @@
                 return div.innerHTML;
             };
 
+            // Add Top 10 heading
+            const topHeading = document.createElement('div');
+            topHeading.style.cssText = 'font-weight: bold; font-size: 14px; margin-bottom: 10px; color: #333;';
+            topHeading.textContent = '🎯 Top 10 Priority Tasks';
+            container.appendChild(topHeading);
+
             top10.forEach((task, index) => {
                 const div = document.createElement('div');
                 div.className = 'today-task-item';
@@ -1502,7 +1508,7 @@
             if (task.mustHave) badges += '<span class="badge must-have">Must Have</span>';
             if (task.goodToHave) badges += '<span class="badge good-to-have">Good to Have</span>';
             if (task.recurring) badges += '<span class="badge recurring">↻ Recurring</span>';
-            if (task.priority === 'high') badges += '<span class="badge high-priority">High Priority</span>';
+            if (task.priority === 'high') badges += '<span class="badge high-priority">🔥 High</span>';
             
             // Escape user-provided content to prevent XSS
             const safeTitle = escapeHtml(task.title || '');
@@ -1521,6 +1527,69 @@
                     </div>
                 `;
                 container.appendChild(div);
+            });
+
+            // Add separator
+            const separator = document.createElement('div');
+            separator.style.cssText = 'border-top: 2px solid #e5e7eb; margin: 20px 0; padding-top: 15px;';
+            container.appendChild(separator);
+
+            // Add tasks grouped by Eisenhower Quadrant
+            const quadrantHeading = document.createElement('div');
+            quadrantHeading.style.cssText = 'font-weight: bold; font-size: 14px; margin-bottom: 15px; color: #333;';
+            quadrantHeading.textContent = '📊 Tasks by Priority (Eisenhower Matrix)';
+            container.appendChild(quadrantHeading);
+
+            const quadrants = [
+                { id: 'q1', name: '🔴 Do First (Urgent & Important)', color: '#ef4444' },
+                { id: 'q2', name: '🟡 Schedule (Important, Not Urgent)', color: '#f59e0b' },
+                { id: 'q3', name: '🔵 Delegate (Urgent, Not Important)', color: '#3b82f6' },
+                { id: 'q4', name: '🟢 Eliminate (Not Important, Not Urgent)', color: '#10b981' }
+            ];
+
+            quadrants.forEach(quad => {
+                const quadTasks = allActiveTasks.filter(t => t.quadrant === quad.id);
+                
+                if (quadTasks.length === 0) return;
+
+                const quadSection = document.createElement('div');
+                quadSection.style.cssText = `
+                    margin-bottom: 15px;
+                    padding: 10px;
+                    background: ${quad.color}15;
+                    border-left: 4px solid ${quad.color};
+                    border-radius: 4px;
+                `;
+
+                const quadTitle = document.createElement('div');
+                quadTitle.style.cssText = `
+                    font-weight: bold;
+                    font-size: 13px;
+                    color: ${quad.color};
+                    margin-bottom: 8px;
+                `;
+                quadTitle.textContent = `${quad.name} (${quadTasks.length})`;
+                quadSection.appendChild(quadTitle);
+
+                quadTasks.slice(0, 5).forEach((task, idx) => {
+                    const taskItem = document.createElement('div');
+                    taskItem.style.cssText = 'padding: 6px 0; font-size: 12px; color: #555;';
+                    
+                    const safeTaskTitle = escapeHtml(task.title || '');
+                    const priorityIcon = task.priority === 'high' ? '🔥' : task.priority === 'low' ? '❄️' : '•';
+                    
+                    taskItem.innerHTML = `${priorityIcon} ${safeTaskTitle}`;
+                    quadSection.appendChild(taskItem);
+                });
+
+                if (quadTasks.length > 5) {
+                    const more = document.createElement('div');
+                    more.style.cssText = 'padding: 4px 0; font-size: 11px; color: #999; font-style: italic;';
+                    more.textContent = `+${quadTasks.length - 5} more`;
+                    quadSection.appendChild(more);
+                }
+
+                container.appendChild(quadSection);
             });
 
             // Update priority indicators after rendering
@@ -2742,8 +2811,8 @@
             
             signInButton.addEventListener('click', async (e) => {
                 console.log('🖱️ CLICK EVENT: Google Sign-In button clicked!', e);
-                console.log('🔍 Event target:', e.target);
-                console.log('🔍 Current target:', e.currentTarget);
+                console.log('🔍 Current origin:', window.location.origin);
+                console.log('🔍 Current hostname:', window.location.hostname);
                 console.log('🔍 Firebase auth object:', auth);
                 console.log('🔍 Google provider:', googleProvider);
                 
@@ -2754,16 +2823,23 @@
                 try {
                     showSyncStatus('Signing in with Google...', 'syncing');
                     console.log('📤 Calling signInWithRedirect (better for mobile)...');
+                    console.log('🔑 Using auth domain:', 'taskmatrix-48f1f.firebaseapp.com');
                     
                     // Use signInWithRedirect for better mobile support
-                    await auth.signInWithRedirect(googleProvider);
-                    
-                    console.log('✅ Redirect initiated');
+                    const result = await auth.signInWithRedirect(googleProvider);
+                    console.log('✅ Redirect returned:', result);
                     
                 } catch (error) {
                     console.error('❌ Sign-in error:', error);
                     console.error('❌ Error code:', error.code);
                     console.error('❌ Error message:', error.message);
+                    console.error('❌ Full error:', JSON.stringify(error));
+                    
+                    // Log more details
+                    console.error('❌ Error name:', error.name);
+                    console.error('❌ Error stack:', error.stack);
+                    
+                    showSyncStatus('Sign-in error: ' + error.code + ' - ' + error.message, 'error');
                     
                     // Fallback to popup
                     console.log('📤 Fallback: Trying signInWithPopup...');
@@ -2772,14 +2848,15 @@
                         console.log('✅ signInWithPopup returned:', result);
                         const credential = result.credential;
                         accessToken = credential.accessToken;
-                        console.log('✅ Signed in successfully');
+                        console.log('✅ Signed in successfully via popup');
                         hideAuthModal();
                         showSyncStatus('Signed in successfully!', 'success');
                         setTimeout(hideSyncStatus, 2000);
                     } catch (popupError) {
                         console.error('❌ Popup sign-in also failed:', popupError);
+                        console.error('❌ Popup error code:', popupError.code);
                         showSyncStatus('Sign-in failed: ' + popupError.message, 'error');
-                        setTimeout(hideSyncStatus, 3000);
+                        setTimeout(hideSyncStatus, 5000);
                     }
                 }
             }, true); // Use capture phase
