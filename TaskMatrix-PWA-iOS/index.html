@@ -950,6 +950,9 @@
             </button>
             <div style="height:12px"></div>
             <button class="auth-btn" id="openInBrowserSignin" style="background:#fff;color:#333;border:2px dashed #ddd;margin-top:8px;">Open in Browser to Sign In (Safari)</button>
+            <div style="height:8px"></div>
+            <div id="iosPwaSigninNotice" style="font-size:12px;color:#b91c1c;display:none;margin-top:6px;">iOS installed PWA notices: Google Sign-In may not persist in this app. Please use "Open in Browser" and then return to the PWA and press "Complete Sign-In".</div>
+            <button class="auth-btn" id="completeSignInBtn" style="background:#f3f4f6;color:#333;border:2px solid #ddd;margin-top:8px;">Complete Sign-In</button>
             
             <div class="auth-divider">OR</div>
             
@@ -1360,10 +1363,63 @@
             if (openInBrowserBtn) {
                 openInBrowserBtn.addEventListener('click', () => {
                     try { localStorage.setItem('auth_open_in_browser', 'true'); } catch (e) {}
-                    const url = window.location.href;
+                    // Mark sign-in progress in this PWA context so we don't show the modal again while the user signs in on Safari
+                    try { signInInProgress = true; } catch (e) {}
+                    const url = window.location.origin + '/redirect_signin.html';
                     window.open(url, '_blank', 'noopener,noreferrer');
                     showSyncStatus('Opened in system browser — sign in there and return to the app', 'syncing');
                     setTimeout(hideSyncStatus, 6000);
+                });
+            }
+            const completeSigninBtn = document.getElementById('completeSignInBtn');
+            if (completeSigninBtn) {
+                completeSigninBtn.addEventListener('click', async () => {
+                    showSyncStatus('Checking sign-in result...', 'syncing');
+                    try {
+                        const result = await firebase.auth().getRedirectResult();
+                        console.log('📋 getRedirectResult returned (manual):', result);
+                        if (result && result.credential) {
+                            const credential = result.credential;
+                            accessToken = credential.accessToken || accessToken;
+                            console.log('🔑 Got Google access token from redirect (manual)');
+                        }
+                        // If still not signed in (no credential / no auth.currentUser) and we are in iOS PWA,
+                        // try fallback to signInWithPopup (user initiated from click) as Safari redirect flows may not share session with installed PWA.
+                        if (!auth.currentUser) {
+                            // Try reading clipboard for a PWA sign-in flag written by the system browser redirect helper
+                            try {
+                                const clipboardText = (navigator && navigator.clipboard && navigator.clipboard.readText) ? await navigator.clipboard.readText() : null;
+                                if (clipboardText && clipboardText.includes('taskmatrix-pwa-signedin')) {
+                                    console.log('🧾 Clipboard shows PWA sign-in hint; trying popup fallback to capture session');
+                                }
+                            } catch (clipErr) { console.warn('⚠️ Clipboard read failed:', clipErr); }
+                            try {
+                                console.log('⏳ Manual completeSignIn: No current user detected after getRedirectResult. Trying signInWithPopup fallback.');
+                                const popupResult = await auth.signInWithPopup(googleProvider);
+                                console.log('✅ Popup fallback succeeded (manual completeSignIn):', popupResult);
+                                const credential = popupResult.credential;
+                                accessToken = credential?.accessToken || accessToken;
+                                hideAuthModal();
+                                showSyncStatus('Signed in successfully!', 'success');
+                                setTimeout(hideSyncStatus, 2000);
+                            } catch (popupErr) {
+                                console.warn('⚠️ Popup fallback failed (manual completeSignIn):', popupErr);
+                                // If popup fallback fails, then it's likely due to iOS PWA restrictions; instruct user to use Safari
+                                const warningText = isIosDevice && isStandalonePWA ? 'On iOS (installed PWA), sign-in may not persist. Please use "Open in Browser to Sign In" and then return to the app.' : 'Could not complete sign-in automatically.';
+                                showSyncStatus(warningText, 'error');
+                                setTimeout(hideSyncStatus, 8000);
+                            }
+                        }
+                        // If signed in, onAuthStateChanged will handle UI
+                        setTimeout(hideSyncStatus, 2000);
+                        setTimeout(() => { signInInProgress = false; try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {} }, 800);
+                    } catch (error) {
+                        console.error('❌ getRedirectResult error (manual)', error);
+                        showSyncStatus('Sign-in check failed: ' + (error.message || ''), 'error');
+                        setTimeout(hideSyncStatus, 4000);
+                        // Reset state after manual check
+                        setTimeout(() => { signInInProgress = false; try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {} }, 800);
+                    }
                 });
             }
 
@@ -3020,6 +3076,17 @@
                 console.log('📱 Showing auth modal...', modal);
                 modal.classList.add('show');
                 console.log('✅ Auth modal classes:', modal.className);
+                // If on iOS installed PWA, show a notice since Google sign-in redirect may not persist
+                try {
+                    const iosNotice = document.getElementById('iosPwaSigninNotice');
+                    if (iosNotice) {
+                        if (isIosDevice && isStandalonePWA) {
+                            iosNotice.style.display = 'block';
+                        } else {
+                            iosNotice.style.display = 'none';
+                        }
+                    }
+                } catch (e) { /* ignore */ }
             } else {
                 console.log('⏭️ Skipping auth modal (offline mode or recently dismissed)');
             }
@@ -3041,6 +3108,10 @@
                 console.log('🔑 Got Google access token from redirect');
             } else {
                 console.log('ℹ️ No credential in redirect result');
+                // Provide a hint for developers and users in iOS PWA context
+                if (isIosDevice && isStandalonePWA) {
+                    console.warn('⚠️ iOS PWA detected: redirect results may not persist across installed PWA and Safari. Ask the user to use "Open in Browser" to sign in and return to the app.');
+                }
             }
         }).catch((error) => {
             console.error('⚠️ getRedirectResult error:', error);
@@ -3057,6 +3128,8 @@
         auth.onAuthStateChanged((user) => {
             // Log state for debugging
             console.log('🔁 onAuthStateChanged triggered. signInInProgress:', signInInProgress);
+            // Clear sign-in-in-progress on any auth state change to avoid stale UI
+            try { signInInProgress = false; } catch (e) {}
             if (user) {
                 try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {}
                 // User is signed in
@@ -3239,6 +3312,45 @@
                     }
                 }
             } catch (e) { /* ignore */ }
+            // Re-run redirect result check if user returns from browser (iOS PWA case)
+            if (!auth.currentUser) {
+                // If sign-in seems to be not completed, probe for redirect result which may be available after returning from browser
+                console.log('🔁 focus: Re-checking redirect result for sign-in');
+                try {
+                    firebase.auth().getRedirectResult().then((result) => {
+                        console.log('📋 getRedirectResult returned (focus):', result);
+                        if (result && result.credential) {
+                            accessToken = result.credential?.accessToken || accessToken;
+                            console.log('🔑 Got Google access token from redirect (focus)');
+                        }
+                    }).catch((error) => {
+                        console.warn('⚠️ getRedirectResult error (focus)', error);
+                    });
+                } catch (err) { console.warn('⚠️ getRedirectResult failed (focus)', err); }
+            }
+        });
+
+        window.addEventListener('visibilitychange', () => {
+            console.log('🔎 Visibility changed:', document.visibilityState);
+            if (document.visibilityState === 'visible') {
+                // Re-check auth after visibility changes as well
+                if (auth.currentUser) {
+                    displayUserProfile(auth.currentUser);
+                    hideAuthModal();
+                } else if (!localStorage.getItem('offlineMode') && !signInInProgress) {
+                    showAuthModal();
+                }
+                // Also trigger redirect-result to capture sign-in result when returning from Safari
+                if (!auth.currentUser) {
+                    firebase.auth().getRedirectResult().then((result) => {
+                        console.log('📋 getRedirectResult returned (visibilitychange):', result);
+                        if (result && result.credential) {
+                            accessToken = result.credential?.accessToken || accessToken;
+                            console.log('🔑 Got Google access token from redirect (visibilitychange)');
+                        }
+                    }).catch(err => console.warn('⚠️ getRedirectResult error (visibility):', err));
+                }
+            }
         });
 
         // Logout
@@ -3353,7 +3465,9 @@
                 document.body.appendChild(dbg);
             }
             const userEmail = (auth && auth.currentUser) ? auth.currentUser.email : 'null';
-            dbg.textContent = `auth.currentUser: ${userEmail} | signInInProgress: ${signInInProgress}`;
+            const openedFlag = (() => { try { return localStorage.getItem('auth_open_in_browser') || 'null'; } catch (e) { return 'err'; } })();
+            const startedFlag = (() => { try { return localStorage.getItem('auth_signin_started') || 'null'; } catch (e) { return 'err'; } })();
+            dbg.textContent = `auth.currentUser:${userEmail} | signInInProgress:${signInInProgress} | opened:${openedFlag} | started:${startedFlag} | iosPWA:${isIosDevice && isStandalonePWA}`;
         }
 
         setInterval(updateDebugOverlay, 800);

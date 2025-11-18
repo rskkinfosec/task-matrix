@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TaskMatrix Sign-In</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding:20px; display:flex; align-items:center; justify-content:center; height:100vh; }
+    .card { text-align:center; max-width:420px; }
+    .btn { padding:10px 14px; border-radius:8px; background:#4285f4; color:white; border:none; font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h3>TaskMatrix — Sign in with Google</h3>
+    <p>We will redirect you to Google to sign in. After signing in, return to the app (home screen) to continue.</p>
+    <div style="height:16px"></div>
+    <button id="signin" class="btn">Start Sign-In</button>
+    <div style="height:20px"></div>
+    <small>If the page doesn't close, you can manually switch back to the TaskMatrix app.</small>
+  </div>
+
+  <!-- Firebase SDK (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+
+  <script>
+    // Use same Firebase config as index.html
+    const firebaseConfig = {
+      apiKey: "AIzaSyA_RK15FWYWqetZgfgKgvkymj_rCmwb8OI",
+      authDomain: "taskmatrix-48f1f.firebaseapp.com",
+      projectId: "taskmatrix-48f1f",
+      storageBucket: "taskmatrix-48f1f.firebasestorage.app",
+      messagingSenderId: "660794254184",
+      appId: "1:660794254184:web:123506a1690176ae17ecdd",
+      measurementId: "G-QEGXT9N20T"
+    };
+
+    // Initialize Firebase
+    try { firebase.initializeApp(firebaseConfig); } catch(e) { console.warn('Firebase already initialized'); }
+    const auth = firebase.auth();
+    const googleProvider = new firebase.auth.GoogleAuthProvider();
+    googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+
+    document.getElementById('signin').addEventListener('click', async () => {
+      try {
+        // Mark that sign-in started
+        try { localStorage.setItem('auth_signin_started', Date.now().toString()); } catch(e){}
+        await auth.signInWithRedirect(googleProvider);
+      } catch (err) {
+        console.error('Redirect sign-in failed', err);
+        alert('Redirect sign-in failed: ' + (err.message || err));
+      }
+    });
+
+    // Show friendly message after redirection
+    firebase.auth().getRedirectResult().then(result => {
+      if (result && result.user) {
+        document.body.innerHTML = '<div style="padding:20px; text-align:center;">\n\n<p>Sign-in complete. You can close this tab and return to the TaskMatrix app.</p>\n\n</div>';
+        try { localStorage.setItem('auth_open_in_browser', 'true'); } catch(e){}
+        // Attempt to write a `taskmatrix-pwa-signedin` string to clipboard to help the PWA detect sign-in on return
+        try {
+          if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText('taskmatrix-pwa-signedin').then(() => {
+              console.log('✅ Wrote PWA sign-in flag to clipboard');
+            }).catch(err => console.warn('⚠️ Could not write clipboard:', err));
+          }
+        } catch (e) { console.warn('⚠️ Clipboard write failed', e); }
+      }
+    }).catch(err => console.error('getRedirectResult redirectSignin callback', err));
+  </script>
+</body>
+</html>
