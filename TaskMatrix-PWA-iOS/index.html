@@ -2803,6 +2803,8 @@
                 // User is signed in
                 currentUser = user;
                 console.log('✅ User signed in:', user.email);
+                // Mark in localStorage for cross-tab debugging
+                try { localStorage.setItem('auth_lastSignIn', Date.now().toString()); } catch (e) { console.warn('⚠️ Failed to write auth_lastSignIn', e); }
                 
                 // Get access token
                 user.getIdToken().then(token => {
@@ -2828,6 +2830,7 @@
                 currentUser = null;
                 accessToken = null;
                 console.log('ℹ️ User signed out');
+                try { localStorage.setItem('auth_lastSignOut', Date.now().toString()); } catch (e) { console.warn('⚠️ Failed to write auth_lastSignOut', e); }
                 hideUserProfile();
                 
                 // Show auth modal if not in offline mode and a sign-in is not currently in progress
@@ -2965,12 +2968,31 @@
                         await syncToDrive();
                     }
                     
+                    console.log('🧾 logoutBtn triggered signOut');
                     await auth.signOut();
                     console.log('👋 Signed out successfully');
                     showAuthModal();
                 } catch (error) {
                     console.error('❌ Logout error:', error);
                 }
+            }
+        });
+
+        // Wrap auth.signOut to log stack trace when called from anywhere
+        if (auth && auth.signOut) {
+            const originalSignOut = auth.signOut.bind(auth);
+            auth.signOut = async function() {
+                console.warn('⚠️ auth.signOut called', new Error().stack);
+                try { localStorage.setItem('auth_signOutCalledAt', Date.now().toString()); } catch (e) {}
+                return await originalSignOut();
+            };
+        }
+
+        // Listen for localStorage changes from other tabs or contexts
+        window.addEventListener('storage', (e) => {
+            if (!e) return;
+            if (e.key && e.key.startsWith('auth_')) {
+                console.log('🔁 storage event:', e.key, e.newValue);
             }
         });
 
@@ -3037,6 +3059,21 @@
             messageEl.textContent = message;
             statusEl.className = 'sync-status show ' + type;
         }
+
+        // Debug overlay: show current auth status & signInInProgress
+        function updateDebugOverlay() {
+            let dbg = document.getElementById('debugOverlay');
+            if (!dbg) {
+                dbg = document.createElement('div');
+                dbg.id = 'debugOverlay';
+                dbg.style.cssText = 'position:fixed;left:10px;bottom:80px;background:rgba(0,0,0,0.6);color:white;padding:6px 8px;border-radius:6px;z-index:99999;font-size:12px;';
+                document.body.appendChild(dbg);
+            }
+            const userEmail = (auth && auth.currentUser) ? auth.currentUser.email : 'null';
+            dbg.textContent = `auth.currentUser: ${userEmail} | signInInProgress: ${signInInProgress}`;
+        }
+
+        setInterval(updateDebugOverlay, 800);
 
         // Hide sync status
         function hideSyncStatus() {
