@@ -1260,6 +1260,36 @@
         </div>
     </div>
 
+    <!-- Restore Preview Modal -->
+    <div id="restoreModal" class="modal" aria-hidden="true">
+        <div class="modal-content" style="max-width:900px;">
+            <h3>📥 Google Drive Backup - Preview & Merge options</h3>
+            <p style="font-size:13px;color:#666;">Review changes below and choose per-task actions:</p>
+            <div style="max-height:400px; overflow:auto; margin:10px 0;">
+                <table id="restorePreviewTable" style="width:100%;border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#f6f6f6;border-bottom:1px solid #e5e7eb;">
+                            <th style="padding:8px;font-weight:bold;text-align:left;">Backup Task</th>
+                            <th style="padding:8px;font-weight:bold;text-align:left;">Local Task</th>
+                            <th style="padding:8px;font-weight:bold;text-align:left;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+                <label style="display:flex;gap:8px;align-items:center;margin-right:auto;">
+                    <input type="checkbox" id="restoreDontAskAgain" />
+                    <span style="font-size:12px;color:#666;">Don't ask again for this backup</span>
+                </label>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-secondary" id="restoreCancelBtn">Cancel</button>
+                    <button class="btn-primary" id="restoreApplyBtn">Apply Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script>
         let tasks = JSON.parse(localStorage.getItem('tasks_v2')) || [];
@@ -1747,20 +1777,42 @@
                 // Update existing task
                 const task = tasks.find(t => t.id === editingTaskId);
                 if (task) {
-                    task.quadrant = currentQuadrant;
-                    task.title = document.getElementById('taskTitle').value;
-                    task.description = document.getElementById('taskDescription').value;
+                    const now = Date.now();
+                    const newTitle = document.getElementById('taskTitle').value;
+                    const newDescription = document.getElementById('taskDescription').value;
+                    const newPriority = document.getElementById('taskPriority').value;
+                    const newEstimateValue = parseFloat(document.getElementById('taskEstimateValue').value);
+                    const newEstimateUnit = document.getElementById('taskEstimateUnit').value;
+                    const newDeadline = document.getElementById('taskDeadline').value;
+                    const newRecurring = document.getElementById('taskRecurring').checked;
+                    const newFrequency = document.getElementById('taskFrequency').value;
+
+                    if (!task.fieldUpdatedAt) task.fieldUpdatedAt = {};
+                    if (task.title !== newTitle) { task.title = newTitle; task.fieldUpdatedAt.title = now; }
+                    if (task.description !== newDescription) { task.description = newDescription; task.fieldUpdatedAt.description = now; }
+                    if (task.quadrant !== currentQuadrant) { task.quadrant = currentQuadrant; task.fieldUpdatedAt.quadrant = now; }
+                    if (task.priority !== newPriority) { task.priority = newPriority; task.fieldUpdatedAt.priority = now; }
+                    if (task.estimateValue !== newEstimateValue) { task.estimateValue = newEstimateValue; task.fieldUpdatedAt.estimateValue = now; }
+                    if (task.estimateUnit !== newEstimateUnit) { task.estimateUnit = newEstimateUnit; task.fieldUpdatedAt.estimateUnit = now; }
+                    if (task.deadline !== newDeadline) { task.deadline = newDeadline; task.fieldUpdatedAt.deadline = now; }
+                    if (task.recurring !== newRecurring) { task.recurring = newRecurring; task.fieldUpdatedAt.recurring = now; }
+                    if (task.frequency !== newFrequency) { task.frequency = newFrequency; task.fieldUpdatedAt.frequency = now; }
                     task.important = important;
                     task.urgent = urgent;
-                    task.priority = document.getElementById('taskPriority').value;
-                    task.estimateValue = parseFloat(document.getElementById('taskEstimateValue').value);
-                    task.estimateUnit = document.getElementById('taskEstimateUnit').value;
-                    task.deadline = document.getElementById('taskDeadline').value;
-                    task.recurring = document.getElementById('taskRecurring').checked;
-                    task.frequency = document.getElementById('taskFrequency').value;
+                    task.updatedAt = now;
+                    // Recompute canonical hash after editing so deduping remains valid
+                    task.canonicalHash = generateTaskHash(task);
                 }
             } else {
                 // Create new task
+                const now = Date.now();
+                // If CSV/Excel contains UpdatedAt or FieldUpdatedAt columns, parse them
+                const rowUpdatedAt = getField(['UpdatedAt']) || getField(['updatedAt']);
+                const parsedUpdatedAt = rowUpdatedAt ? Date.parse(rowUpdatedAt) : now;
+                const rowFieldUpdatedAt = getField(['FieldUpdatedAt']) || getField(['fieldUpdatedAt']);
+                const parsedFieldUpdatedAt = rowFieldUpdatedAt ? (() => {
+                    try { return JSON.parse(rowFieldUpdatedAt); } catch (e) { return null; }
+                })() : null;
                 const task = {
                     id: Date.now(),
                     parentTab: currentParentTab,
@@ -1779,10 +1831,40 @@
                     frequency: document.getElementById('taskFrequency').value,
                     completed: false,
                     createdAt: new Date().toISOString(),
+                    updatedAt: parsedUpdatedAt,
+                    fieldUpdatedAt: parsedFieldUpdatedAt || {
+                        title: now,
+                        description: now,
+                        quadrant: now,
+                        priority: now,
+                        estimateValue: now,
+                        estimateUnit: now,
+                        deadline: now,
+                        recurring: now,
+                        frequency: now,
+                        completed: now
+                    },
                     completedAt: null,
                     deadlineMissed: false,
-                    actualTime: null
+                    actualTime: null,
+                    updatedAt: now,
+                    fieldUpdatedAt: {
+                        title: now,
+                        description: now,
+                        quadrant: now,
+                        priority: now,
+                        estimateValue: now,
+                        estimateUnit: now,
+                        deadline: now,
+                        recurring: now,
+                        frequency: now,
+                        completed: now
+                    },
+                    // id and other fields already defined above
                 };
+                task.canonicalHash = generateTaskHash(task);
+                // Assign GUID (stable id) to support merge/dedupe across backups
+                if (!task.guid) task.guid = generateUUID();
                 tasks.push(task);
             }
 
@@ -1796,6 +1878,10 @@
             if (task) {
                 task.completed = true;
                 task.completedAt = new Date().toISOString();
+                const now = Date.now();
+                task.updatedAt = now;
+                if (!task.fieldUpdatedAt) task.fieldUpdatedAt = {};
+                task.fieldUpdatedAt.completed = now;
                 
                 if (task.deadline) {
                     const deadline = new Date(task.deadline);
@@ -1809,6 +1895,11 @@
                     newTask.completed = false;
                     newTask.completedAt = null;
                     newTask.deadlineMissed = false;
+                    newTask.guid = generateUUID();
+                    newTask.updatedAt = Date.now();
+                    newTask.fieldUpdatedAt = { ...task.fieldUpdatedAt } || {};
+                    // reset completed flag times
+                    newTask.fieldUpdatedAt.completed = Date.now();
                     
                     if (task.deadline) {
                         const nextDeadline = new Date(task.deadline);
@@ -1964,7 +2055,141 @@
         }
 
         function saveTasks() {
+            // Ensure every task has a stable GUID and fieldUpdatedAt before saving
+            tasks.forEach(t => {
+                if (!t.guid) t.guid = generateUUID();
+                if (!t.fieldUpdatedAt) t.fieldUpdatedAt = {};
+                const now = Date.now();
+                const fields = ['title','description','quadrant','priority','estimateValue','estimateUnit','deadline','recurring','frequency','completed'];
+                fields.forEach(f => { if (!t.fieldUpdatedAt[f]) t.fieldUpdatedAt[f] = t.updatedAt || now; });
+                if (!t.updatedAt) t.updatedAt = now;
+            });
             localStorage.setItem('tasks_v2', JSON.stringify(tasks));
+        }
+
+        // Generate a canonical hash to identify a task across imports/backups
+        function generateTaskHash(task) {
+            const parts = [
+                (task.title || '').trim().toLowerCase(),
+                (task.description || '').trim().toLowerCase(),
+                (task.parentTab || '').toString(),
+                (task.quadrant || '').toString(),
+                (task.deadline || '').toString(),
+                (task.estimateValue || '').toString(),
+                (task.estimateUnit || '').toString(),
+                (task.priority || '').toString()
+            ];
+            // Use a URI-encoded base64-like stable string
+            try {
+                return btoa(unescape(encodeURIComponent(parts.join('|'))));
+            } catch (e) {
+                return encodeURIComponent(parts.join('|'));
+            }
+        }
+
+        // Generate GUID v4 using Crypto API where possible
+        function generateUUID() {
+            if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+                // RFC4122 version 4 compliant
+                const buf = new Uint8Array(16);
+                crypto.getRandomValues(buf);
+                buf[6] = (buf[6] & 0x0f) | 0x40; // version 4
+                buf[8] = (buf[8] & 0x3f) | 0x80; // variant
+                const hex = Array.from(buf).map(b => ('00' + b.toString(16)).slice(-2)).join('');
+                return `${hex.substr(0,8)}-${hex.substr(8,4)}-${hex.substr(12,4)}-${hex.substr(16,4)}-${hex.substr(20,12)}`;
+            } else {
+                // Fallback for older environments
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            }
+        }
+
+        // Global utility to escape HTML (XSS protection)
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        // Show restore preview modal and allow per-task actions; returns Promise
+        function showRestoreModal(candidates, fileId, sheetCount, localTaskCount) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('restoreModal');
+                const tbody = document.querySelector('#restorePreviewTable tbody');
+                tbody.innerHTML = '';
+
+                candidates.forEach((c, idx) => {
+                    const tr = document.createElement('tr');
+                    tr.style.borderBottom = '1px solid #eee';
+
+                    const backupTd = document.createElement('td');
+                    backupTd.style.padding = '8px';
+                    backupTd.style.verticalAlign = 'top';
+                    backupTd.innerHTML = `<strong>${escapeHtml(c.backup.title || 'Untitled')}</strong><div style="font-size:11px;color:#666;margin-top:6px;">${escapeHtml(c.backup.parentTab || '')} • ${escapeHtml(getQuadrantName(c.backup.quadrant || 'q2'))}</div>`;
+
+                    const localTd = document.createElement('td');
+                    localTd.style.padding = '8px';
+                    localTd.style.verticalAlign = 'top';
+                    if (c.local) {
+                        localTd.innerHTML = `<strong>${escapeHtml(c.local.title || 'Untitled')}</strong><div style="font-size:11px;color:#666;margin-top:6px;">${escapeHtml(c.local.parentTab || '')} • ${escapeHtml(getQuadrantName(c.local.quadrant || 'q2'))}</div>`;
+                    } else {
+                        localTd.innerHTML = '<em style="color:#888;">New task (no local match)</em>';
+                    }
+
+                    const actionTd = document.createElement('td');
+                    actionTd.style.padding = '8px';
+                    actionTd.style.verticalAlign = 'top';
+                    const select = document.createElement('select');
+                    select.style.padding = '6px';
+                    if (c.local) {
+                        ['merge','replace','ignore'].forEach(opt => { const o = document.createElement('option'); o.value = opt; o.text = opt.charAt(0).toUpperCase() + opt.slice(1); select.appendChild(o); });
+                        select.value = 'merge';
+                    } else {
+                        ['add','ignore'].forEach(opt => { const o = document.createElement('option'); o.value = opt; o.text = opt.charAt(0).toUpperCase() + opt.slice(1); select.appendChild(o); });
+                        select.value = 'add';
+                    }
+                    actionTd.appendChild(select);
+
+                    tr.appendChild(backupTd);
+                    tr.appendChild(localTd);
+                    tr.appendChild(actionTd);
+                    tbody.appendChild(tr);
+
+                    // Store selection state
+                    c.action = select.value;
+                    select.addEventListener('change', () => c.action = select.value);
+                });
+
+                // Show modal
+                modal.classList.add('active');
+                const cancelBtn = document.getElementById('restoreCancelBtn');
+                const applyBtn = document.getElementById('restoreApplyBtn');
+                const dontAskCheckbox = document.getElementById('restoreDontAskAgain');
+
+                const cleanup = () => {
+                    modal.classList.remove('active');
+                    cancelBtn.removeEventListener('click', onCancel);
+                    applyBtn.removeEventListener('click', onApply);
+                };
+
+                const onCancel = () => {
+                    if (dontAskCheckbox.checked) try { localStorage.setItem('drive_backup_declined:' + fileId, Date.now().toString()); } catch (e) {}
+                    cleanup();
+                    resolve({ action: 'cancel' });
+                };
+
+                const onApply = () => {
+                    const selections = candidates.map(c => ({ backup: c.backup, local: c.local, action: c.action }));
+                    if (dontAskCheckbox.checked) try { localStorage.setItem('drive_backup_restored:' + fileId, Date.now().toString()); } catch (e) {}
+                    cleanup();
+                    resolve({ action: 'apply', selections });
+                };
+
+                cancelBtn.addEventListener('click', onCancel);
+                applyBtn.addEventListener('click', onApply);
+            });
         }
 
         function saveCustomTabs() {
@@ -2415,6 +2640,7 @@
             let newTabsCreated = [];
             
             data.forEach(row => {
+                const now = Date.now();
                 // Map column names (case-insensitive)
                 const getField = (possibleNames) => {
                     for (let name of possibleNames) {
@@ -2468,10 +2694,25 @@
                     frequency: getField(['Frequency']).toLowerCase() || 'daily',
                     completed: false,
                     createdAt: new Date().toISOString(),
+                    updatedAt: now,
+                    fieldUpdatedAt: {
+                        title: now,
+                        description: now,
+                        quadrant: now,
+                        priority: now,
+                        estimateValue: now,
+                        estimateUnit: now,
+                        deadline: now,
+                        recurring: now,
+                        frequency: now,
+                        completed: now
+                    },
                     completedAt: null,
                     deadlineMissed: false,
-                    actualTime: ''
+                        actualTime: ''
                 };
+                task.canonicalHash = generateTaskHash(task);
+                if (!task.guid) task.guid = generateUUID();
                 
                 tasks.push(task);
                 imported++;
@@ -2736,6 +2977,8 @@
         let syncInProgress = false;
     // Track sign-in state to avoid showing modal while sign-in is in progress
     let signInInProgress = false;
+    // Track if we've shown backup restore prompt for a given backup file
+    let driveBackupPromptInProgress = false;
         const DRIVE_FILE_NAME = 'taskmatrix-backup.xlsx';
 
         // Check if user has dismissed auth modal before
@@ -2824,6 +3067,8 @@
                 
                 // Load tasks from Google Drive (if available)
                 setTimeout(() => syncFromDrive(), 1000);
+                // Kick off a quick remote check for updates (and continue periodic checks)
+                setTimeout(() => checkRemoteBackupAndSync(), 2000);
                 
             } else {
                 // User is signed out
@@ -3111,12 +3356,14 @@
                     if (tabTasks.length === 0) return;
                     
                     // Convert tasks to worksheet data
-                    const wsData = [
-                        ['Title', 'Description', 'Quadrant', 'Priority', 'Estimate Value', 'Estimate Unit', 
-                         'Deadline', 'Recurring', 'Frequency', 'Completed', 'Completed At', 'Deadline Missed']
-                    ];
+            const wsData = [
+                ['Title', 'Description', 'Quadrant', 'Priority', 'Estimate Value', 'Estimate Unit', 
+                 'Deadline', 'Recurring', 'Frequency', 'Completed', 'Completed At', 'Deadline Missed', 'UpdatedAt', 'FieldUpdatedAt', 'CanonicalHash', 'GUID']
+                ];
                     
                     tabTasks.forEach(t => {
+                        if (!t.canonicalHash) t.canonicalHash = generateTaskHash(t);
+                        if (!t.guid) t.guid = generateUUID();
                         wsData.push([
                             t.title || '',
                             t.description || '',
@@ -3129,7 +3376,11 @@
                             t.frequency || '',
                             t.completed ? 'Yes' : 'No',
                             t.completedAt || '',
-                            t.deadlineMissed ? 'Yes' : 'No'
+                            t.deadlineMissed ? 'Yes' : 'No',
+                            t.updatedAt ? new Date(t.updatedAt).toISOString() : '',
+                            t.fieldUpdatedAt ? JSON.stringify(t.fieldUpdatedAt) : '',
+                            t.canonicalHash || '',
+                            t.guid || ''
                         ]);
                     });
                     
@@ -3142,11 +3393,11 @@
                 const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
                 
                 // Check if file already exists on Drive
-                const existingFileId = await findDriveFile(DRIVE_FILE_NAME);
+                const existingFile = await findDriveFile(DRIVE_FILE_NAME);
                 
-                if (existingFileId) {
-                    // Update existing file
-                    await updateDriveFile(existingFileId, blob);
+                if (existingFile && existingFile.id) {
+                    // Update existing file (pass id)
+                    await updateDriveFile(existingFile.id, blob);
                     console.log('✅ Updated existing file on Google Drive');
                 } else {
                     // Create new file
@@ -3182,7 +3433,8 @@
             showSyncStatus('Loading from Google Drive...', 'syncing');
             
             try {
-                const fileId = await findDriveFile(DRIVE_FILE_NAME);
+                const fileObj = await findDriveFile(DRIVE_FILE_NAME);
+                const fileId = fileObj ? fileObj.id : null;
                 
                 if (!fileId) {
                     console.log('ℹ️ No backup file found on Drive');
@@ -3201,46 +3453,29 @@
                 // Ask user if they want to restore
                 const localTaskCount = tasks.length;
                 const sheetCount = workbook.SheetNames.length;
-                
-                if (localTaskCount > 0) {
-                    if (!confirm(`Found backup on Google Drive (${sheetCount} tabs).\n\nYou have ${localTaskCount} local tasks.\n\nRestore from backup? This will replace local tasks.`)) {
-                        showSyncStatus('Using local data', 'success');
-                        setTimeout(hideSyncStatus, 2000);
-                        syncInProgress = false;
-                        return;
-                    }
-                }
-                
-                // Clear existing tasks and tabs
-                tasks = [];
-                customTabs = [];
-                
-                // Import from each sheet
+
+                // Pre-build backupTasks from the workbook so we can prompt and preview changes
+                const backupTasks = [];
                 workbook.SheetNames.forEach(sheetName => {
                     const worksheet = workbook.Sheets[sheetName];
                     const data = XLSX.utils.sheet_to_json(worksheet);
-                    
-                    // Determine tab ID from sheet name
                     const tabName = sheetName.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    let tabId = ['home', 'official', 'self'].includes(tabName) ? tabName : 'custom_' + tabName;
-                    
-                    // Create custom tab if needed
+                    const tabId = ['home', 'official', 'self'].includes(tabName) ? tabName : 'custom_' + tabName;
+                    // Ensure custom tab exists
                     if (!['home', 'official', 'self'].includes(tabId)) {
                         if (!customTabs.find(t => t.id === tabId)) {
                             customTabs.push({ id: tabId, name: sheetName });
                         }
                     }
-                    
-                    // Import tasks
                     data.forEach((row, index) => {
-                        const task = {
-                            id: Date.now() + index,
+                        const t = {
+                            id: Date.now() + Math.floor(Math.random()*100000),
                             parentTab: tabId,
                             title: row.Title || '',
                             description: row.Description || '',
-                            quadrant: row.Quadrant || 'q2',
+                            quadrant: (row.Quadrant || 'q2').toLowerCase(),
                             priority: row.Priority || 'normal',
-                            estimateValue: row['Estimate Value'] || 1,
+                            estimateValue: row['Estimate Value'] || 0,
                             estimateUnit: row['Estimate Unit'] || 'hours',
                             deadline: row.Deadline || '',
                             recurring: row.Recurring === 'Yes',
@@ -3248,27 +3483,202 @@
                             completed: row.Completed === 'Yes',
                             completedAt: row['Completed At'] || null,
                             deadlineMissed: row['Deadline Missed'] === 'Yes',
-                            important: row.Quadrant === 'q1' || row.Quadrant === 'q2',
-                            urgent: row.Quadrant === 'q1' || row.Quadrant === 'q3',
                             mustHave: false,
                             goodToHave: false,
                             createdAt: new Date().toISOString(),
-                            actualTime: null
+                            actualTime: null,
+                            updatedAt: row['UpdatedAt'] ? Date.parse(row['UpdatedAt']) : Date.now(),
+                            fieldUpdatedAt: row['FieldUpdatedAt'] ? JSON.parse(row['FieldUpdatedAt']) : null,
+                            canonicalHash: row['CanonicalHash'] || null,
+                            guid: row['GUID'] || null
                         };
-                        tasks.push(task);
+                        if (!t.canonicalHash) t.canonicalHash = generateTaskHash(t);
+                        backupTasks.push(t);
                     });
                 });
                 
-                // Save to localStorage
+                if (localTaskCount > 0) {
+                    const promptKey = 'drive_backup_prompted:' + fileId;
+                    const promptedBefore = localStorage.getItem(promptKey);
+                    if (!promptedBefore && !driveBackupPromptInProgress) {
+                        driveBackupPromptInProgress = true;
+                        // Mark that we've prompted to avoid duplicates during this run
+                        try { localStorage.setItem(promptKey, Date.now().toString()); } catch (e) {}
+                        const declinedKey = 'drive_backup_declined:' + fileId;
+                        if (localStorage.getItem(declinedKey)) {
+                            console.log('ℹ️ User previously declined Drive backup restore for fileId, skipping.');
+                            driveBackupPromptInProgress = false;
+                            syncInProgress = false;
+                            return;
+                        }
+                        // Build restore candidates (backup vs local)
+                        const restoreCandidates = [];
+                        backupTasks.forEach(bt => {
+                            const byGuid = bt.guid ? tasks.find(l => l.guid === bt.guid) : null;
+                            const byHash = tasks.find(l => l.canonicalHash === bt.canonicalHash);
+                            const localMatch = byGuid || byHash || null;
+                            restoreCandidates.push({ backup: bt, local: localMatch, action: localMatch ? 'merge' : 'add' });
+                        });
+                        // Show modal and wait for user selection
+                        const modalResult = await showRestoreModal(restoreCandidates, fileObj.id, sheetCount, localTaskCount);
+                        driveBackupPromptInProgress = false;
+                        if (!modalResult || modalResult.action === 'cancel') {
+                            try { localStorage.setItem('drive_backup_declined:' + fileId, Date.now().toString()); } catch (e) {}
+                            showSyncStatus('Using local data', 'success');
+                            setTimeout(hideSyncStatus, 2000);
+                            syncInProgress = false;
+                            return;
+                        }
+                        // When modal returns action 'apply', continue to merge based on selections
+                        // modalResult.selections is an array of {backup, local, action}
+                        // We'll map this to backupTasks for merging below
+                        // Mark selected action on each backup task for processing
+                        modalResult.selections.forEach(s => { s.backup._selectedAction = s.action; s.backup._localMatchId = s.local ? s.local.id : null; });
+                        try { localStorage.setItem('drive_lastMerged:' + fileObj.id, Date.now().toString()); } catch (e) {}
+                    } else {
+                        console.log('ℹ️ Drive backup prompt already shown in this session for fileId', fileId);
+                    }
+                    // If user previously declined restore, respect that and skip merge
+                    const declinedKey = 'drive_backup_declined:' + fileId;
+                    if (localStorage.getItem(declinedKey)) {
+                        console.log('ℹ️ User previously declined Drive backup restore for fileId, skipping.');
+                        syncInProgress = false;
+                        return;
+                    }
+                }
+                
+                // Merge backup tasks into local tasks (don't wipe local tasks by default)
+
+                // If no local tasks, restore (import) entirely from backup
+                if (tasks.length === 0) {
+                    tasks = backupTasks.map(t => ({ ...t }));
+                    saveTasks();
+                    saveCustomTabs();
+                    console.log(`✅ Restored ${tasks.length} tasks from Google Drive`);
+                    showSyncStatus('Restored from Google Drive!', 'success');
+                    setTimeout(() => {
+                        hideSyncStatus();
+                        location.reload(); // reload to show restored data
+                    }, 2000);
+                    try { localStorage.setItem('drive_lastMerged:' + fileObj.id, Date.now().toString()); } catch (e) {}
+                    try { localStorage.setItem('drive_lastRemoteModified:' + fileObj.id, Date.parse(fileObj.modifiedTime)); } catch (e) {}
+                    syncInProgress = false;
+                    return;
+                }
+
+                // Otherwise merge: compute canonicalHash for local tasks if missing
+                tasks.forEach(local => {
+                    if (!local.canonicalHash) local.canonicalHash = generateTaskHash(local);
+                });
+
+                let mergedCount = 0;
+                // Helper to determine if backup has a newer value for a field
+                function backupHasNewerField(local, bt, field) {
+                    const localTs = (local && local.fieldUpdatedAt && local.fieldUpdatedAt[field]) ? local.fieldUpdatedAt[field] : (local && local.updatedAt) ? local.updatedAt : 0;
+                    const backupTs = (bt && bt.fieldUpdatedAt && bt.fieldUpdatedAt[field]) ? bt.fieldUpdatedAt[field] : (bt && bt.updatedAt) ? bt.updatedAt : 0;
+                    return backupTs > localTs;
+                }
+
+                backupTasks.forEach(bt => {
+                    // Respect per-task user's selection if present
+                    const selectedAction = bt._selectedAction || (bt.guid ? 'merge' : 'add');
+                    if (selectedAction === 'ignore') {
+                        return; // skip this backup task
+                    }
+                    const exists = tasks.some(local => local.canonicalHash === bt.canonicalHash);
+                    // Prefer GUID matching for deduping when available
+                    const existsByGuid = bt.guid ? tasks.some(local => local.guid === bt.guid) : false;
+                    if (selectedAction === 'replace') {
+                        // Replace local by GUID first, then by canonicalHash
+                        let local = bt.guid ? tasks.find(local => local.guid === bt.guid) : null;
+                        if (!local) local = tasks.find(local => local.canonicalHash === bt.canonicalHash);
+                        if (local) {
+                            // Replace all relevant fields from backup; keep local.id
+                            const preservedId = local.id;
+                            const merged = { ...bt };
+                            // Set updatedAt and fieldUpdatedAt from backup or now
+                            merged.updatedAt = bt.updatedAt || Date.now();
+                            merged.fieldUpdatedAt = bt.fieldUpdatedAt ? { ...bt.fieldUpdatedAt } : {};
+                            merged.id = preservedId;
+                            merged.guid = local.guid || bt.guid || generateUUID();
+                            // Ensure canonicalHash exists
+                            if (!merged.canonicalHash) merged.canonicalHash = generateTaskHash(merged);
+                            const idx = tasks.findIndex(t => t.id === preservedId);
+                            if (idx >= 0) tasks[idx] = merged;
+                        } else {
+                            // No local match; add as new
+                            const newTask = { ...bt };
+                            newTask.updatedAt = bt.updatedAt || Date.now();
+                            newTask.fieldUpdatedAt = bt.fieldUpdatedAt ? { ...bt.fieldUpdatedAt } : {};
+                            if (!newTask.guid) newTask.guid = generateUUID();
+                            newTask.id = Date.now() + Math.floor(Math.random()*100000);
+                            tasks.push(newTask);
+                            mergedCount++;
+                        }
+                        return;
+                    }
+                    if (existsByGuid) {
+                        // If the backup task has a GUID that matches a local task, merge fields into the local task
+                        const local = tasks.find(local => local.guid === bt.guid);
+                        if (local) {
+                            // field-by-field timestamp-based merge
+                            ['title','description','deadline','frequency','estimateValue','estimateUnit','priority','quadrant','recurring','completed'].forEach(f => {
+                                if (backupHasNewerField(local, bt, f)) {
+                                    local[f] = bt[f];
+                                    if (!local.fieldUpdatedAt) local.fieldUpdatedAt = {};
+                                    local.fieldUpdatedAt[f] = bt.fieldUpdatedAt && bt.fieldUpdatedAt[f] ? bt.fieldUpdatedAt[f] : (bt.updatedAt || Date.now());
+                                }
+                            });
+                            // Update overall updatedAt
+                            local.updatedAt = Math.max(local.updatedAt || 0, bt.updatedAt || 0, Date.now());
+                        }
+                        return;
+                    }
+                    if (!exists) {
+                        // Add new backup task to local
+                        const newTask = { ...bt };
+                        newTask.id = Date.now() + Math.floor(Math.random()*100000);
+                        if (!newTask.guid) newTask.guid = generateUUID();
+                        newTask.updatedAt = bt.updatedAt || Date.now();
+                        newTask.fieldUpdatedAt = bt.fieldUpdatedAt ? { ...bt.fieldUpdatedAt } : {};
+                        tasks.push(newTask);
+                        mergedCount++;
+                    } else {
+                        // Merge fields by timestamp where local matches by canonicalHash
+                        const local = tasks.find(l => l.canonicalHash === bt.canonicalHash);
+                        if (local) {
+                            ['title','description','deadline','frequency','estimateValue','estimateUnit','priority','quadrant','recurring','completed'].forEach(f => {
+                                if (backupHasNewerField(local, bt, f)) {
+                                    local[f] = bt[f];
+                                    if (!local.fieldUpdatedAt) local.fieldUpdatedAt = {};
+                                    local.fieldUpdatedAt[f] = bt.fieldUpdatedAt && bt.fieldUpdatedAt[f] ? bt.fieldUpdatedAt[f] : (bt.updatedAt || Date.now());
+                                }
+                            });
+                            local.updatedAt = Math.max(local.updatedAt || 0, bt.updatedAt || 0, Date.now());
+                        }
+                    }
+                });
+
+                // Save merged result
                 saveTasks();
                 saveCustomTabs();
+                // Re-render UI immediately to show merged tasks
+                try { renderTasks(); } catch (e) { console.warn('⚠️ renderTasks error after merge', e); }
+                if (currentParentTab === 'today') try { renderTodayTasks(); } catch (e) {}
+                console.log(`🔄 Merged ${mergedCount} new tasks from Drive backup`);
+                showSyncStatus(`Merged ${mergedCount} task(s) from Drive backup`, 'success');
+                setTimeout(hideSyncStatus, 2000);
+                // Update Drive backup with merged tasks for future idempotency (after a short delay)
+                setTimeout(() => syncToDrive(), 1000);
                 
-                console.log(`✅ Restored ${tasks.length} tasks from Google Drive`);
-                showSyncStatus('Restored from Google Drive!', 'success');
-                setTimeout(() => {
-                    hideSyncStatus();
-                    location.reload(); // Reload to show restored data
-                }, 2000);
+                        // Update drive_lastMerged metadata on remote
+                        const ctFile = await findDriveFile(DRIVE_FILE_NAME);
+                        if (ctFile && ctFile.id) {
+                            try { await updateDriveFileMetadata(ctFile.id, { lastMergedAt: Date.now().toString() }); } catch (e) { console.warn('⚠️ Failed to set lastMergedAt on Drive file', e); }
+                            try { localStorage.setItem('drive_lastMerged:' + ctFile.id, Date.now().toString()); } catch (e) {}
+                        }
+                
+                // Completed merge/restore; UI is updated above
                 
             } catch (error) {
                 console.error('❌ Drive restore error:', error);
@@ -3280,14 +3690,14 @@
         }
 
         // Find file on Google Drive by name
-        async function findDriveFile(fileName) {
+    async function findDriveFile(fileName) {
             // Security check: Ensure user is authenticated and has valid token
             if (!accessToken || !currentUser) {
                 throw new Error('Unauthorized: Not signed in or no access token');
             }
             
             const response = await fetch(
-                `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and trashed=false&spaces=drive&fields=files(id,name)`,
+                `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and trashed=false&spaces=drive&fields=files(id,name,modifiedTime,appProperties)`,
                 {
                     headers: {
                         'Authorization': `Bearer ${accessToken}`
@@ -3300,8 +3710,40 @@
             }
             
             const data = await response.json();
-            return data.files && data.files.length > 0 ? data.files[0].id : null;
+            return data.files && data.files.length > 0 ? data.files[0] : null;
         }
+
+        // Periodic remote backup check - background sync
+        const DRIVE_POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+        async function checkRemoteBackupAndSync() {
+            if (!currentUser || !accessToken || syncInProgress) return;
+            try {
+                const fileObj = await findDriveFile(DRIVE_FILE_NAME);
+                if (!fileObj || !fileObj.id) return;
+                const remoteModified = new Date(fileObj.modifiedTime).getTime();
+                const lastRemoteKnown = parseInt(localStorage.getItem('drive_lastRemoteModified:' + fileObj.id) || '0');
+                if (remoteModified <= lastRemoteKnown) return; // no change
+
+                // If file was merged recently, skip prompting
+                const lastMergedLocal = parseInt(localStorage.getItem('drive_lastMerged:' + fileObj.id) || '0');
+                const remoteMerged = fileObj.appProperties && fileObj.appProperties.lastMergedAt ? parseInt(fileObj.appProperties.lastMergedAt) : 0;
+                if (remoteMerged && lastMergedLocal && remoteMerged <= lastMergedLocal) {
+                    // updated remotely but merged already
+                    localStorage.setItem('drive_lastRemoteModified:' + fileObj.id, remoteModified.toString());
+                    return;
+                }
+
+                // If we reach here, remote backup changed — fetch and merge without user intervention if unchanged behavior indicates no conflict.
+                console.log('🔁 Remote backup changed, running syncFromDrive', fileObj.id);
+                await syncFromDrive();
+                localStorage.setItem('drive_lastRemoteModified:' + fileObj.id, remoteModified.toString());
+            } catch (e) {
+                console.warn('⚠️ Remote backup check error', e);
+            }
+        }
+
+        // Start periodic background remote check
+        setInterval(() => { checkRemoteBackupAndSync(); }, DRIVE_POLL_INTERVAL_MS);
 
         // Create file on Google Drive
         async function createDriveFile(fileName, blob) {
@@ -3310,9 +3752,11 @@
                 throw new Error('Unauthorized: Not signed in or no access token');
             }
             
+            const now = Date.now().toString();
             const metadata = {
                 name: fileName,
-                mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                appProperties: { lastSyncedAt: now }
             };
             
             const form = new FormData();
@@ -3320,7 +3764,7 @@
             form.append('file', blob);
             
             const response = await fetch(
-                'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',
+                'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime,appProperties',
                 {
                     method: 'POST',
                     headers: {
@@ -3334,7 +3778,30 @@
                 throw new Error('Failed to create file: ' + response.statusText);
             }
             
-            return await response.json();
+            const result = await response.json();
+            // Update local tracking
+            try { localStorage.setItem('drive_lastRemoteModified:' + result.id, Date.parse(result.modifiedTime)); } catch (e) {}
+            return result;
+        }
+
+        // Update only metadata (appProperties) for a given file
+        async function updateDriveFileMetadata(fileId, appProps) {
+            if (!accessToken || !currentUser) throw new Error('Unauthorized');
+            try {
+                const body = { appProperties: appProps };
+                const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,appProperties,modifiedTime`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+                if (!res.ok) throw new Error('Failed to update metadata:' + res.statusText);
+                const updated = await res.json();
+                try { localStorage.setItem('drive_lastRemoteModified:' + updated.id, Date.parse(updated.modifiedTime)); } catch (e) {}
+                return updated;
+            } catch (e) { console.error('⚠️ updateDriveFileMetadata error', e); throw e; }
         }
 
         // Update existing file on Google Drive
@@ -3344,23 +3811,30 @@
                 throw new Error('Unauthorized: Not signed in or no access token');
             }
             
+            // Use multipart upload so we can also update metadata appProperties at the same time
+            const now = Date.now().toString();
+            const metadata = { appProperties: { lastSyncedAt: now } };
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', blob);
             const response = await fetch(
-                `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+                `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart&fields=id,name,modifiedTime,appProperties`,
                 {
                     method: 'PATCH',
                     headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                        'Authorization': `Bearer ${accessToken}`
                     },
-                    body: blob
+                    body: form
                 }
             );
             
+            const result = await response.json();
             if (!response.ok) {
                 throw new Error('Failed to update file: ' + response.statusText);
             }
-            
-            return await response.json();
+            // Save latest remote modified time
+            try { localStorage.setItem('drive_lastRemoteModified:' + result.id, Date.parse(result.modifiedTime)); } catch (e) {}
+            return result;
         }
 
         // Download file from Google Drive
