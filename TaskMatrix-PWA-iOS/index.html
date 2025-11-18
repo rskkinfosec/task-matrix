@@ -2743,14 +2743,25 @@
         }
 
         // Handle redirect result from Google Sign-In
+        console.log('🔄 Checking for redirect result from Google...');
         firebase.auth().getRedirectResult().then((result) => {
-            if (result.credential) {
+            console.log('📋 getRedirectResult returned:', result);
+            if (result && result.credential) {
                 console.log('✅ Redirect result received!');
                 accessToken = result.credential.accessToken;
                 console.log('🔑 Got Google access token from redirect');
+            } else {
+                console.log('ℹ️ No credential in redirect result');
             }
         }).catch((error) => {
-            console.log('ℹ️ No redirect result or error:', error.code);
+            console.error('⚠️ getRedirectResult error:', error);
+            console.error('⚠️ Error code:', error.code);
+            console.error('⚠️ Error message:', error.message);
+            if (error.code === 'auth/internal-error') {
+                console.error('⚠️ INTERNAL ERROR: This usually means Firebase API key is not allowed for this domain');
+                console.error('⚠️ Current domain:', window.location.hostname);
+                console.error('⚠️ Current origin:', window.location.origin);
+            }
         });
 
         // Authentication state observer
