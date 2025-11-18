@@ -948,6 +948,8 @@
                 </svg>
                 Sign in with Google
             </button>
+            <div style="height:12px"></div>
+            <button class="auth-btn" id="openInBrowserSignin" style="background:#fff;color:#333;border:2px dashed #ddd;margin-top:8px;">Open in Browser to Sign In (Safari)</button>
             
             <div class="auth-divider">OR</div>
             
@@ -1353,6 +1355,17 @@
             document.getElementById('importBtn').addEventListener('click', openImportModal);
             document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
             document.getElementById('clearTabBtn').addEventListener('click', clearTabTasks);
+            // Open the app in the system browser (Safari) to workaround PWA iOS auth persistence issues
+            const openInBrowserBtn = document.getElementById('openInBrowserSignin');
+            if (openInBrowserBtn) {
+                openInBrowserBtn.addEventListener('click', () => {
+                    try { localStorage.setItem('auth_open_in_browser', 'true'); } catch (e) {}
+                    const url = window.location.href;
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                    showSyncStatus('Opened in system browser — sign in there and return to the app', 'syncing');
+                    setTimeout(hideSyncStatus, 6000);
+                });
+            }
 
             // Settings modal event listeners (buttons don't have these IDs in HTML)
             // document.getElementById('closeSettingsBtn').addEventListener('click', closeSettingsModal);
@@ -2986,6 +2999,8 @@
             // If a sign-in is currently ongoing or user is already authenticated, don't show modal
             if (signInInProgress) return false;
             if (auth && auth.currentUser) return false;
+            // If a sign-in was started in another window/tab (persisted), don't show modal for a short window
+            try { const started = parseInt(localStorage.getItem('auth_signin_started') || '0'); if (started && Date.now() - started < 10 * 60 * 1000) return false; } catch (e) {}
             const offlineMode = localStorage.getItem('offlineMode');
             const lastDismissed = localStorage.getItem('authModalDismissed');
             const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
@@ -3043,6 +3058,7 @@
             // Log state for debugging
             console.log('🔁 onAuthStateChanged triggered. signInInProgress:', signInInProgress);
             if (user) {
+                try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {}
                 // User is signed in
                 currentUser = user;
                 console.log('✅ User signed in:', user.email);
@@ -3069,6 +3085,8 @@
                 setTimeout(() => syncFromDrive(), 1000);
                 // Kick off a quick remote check for updates (and continue periodic checks)
                 setTimeout(() => checkRemoteBackupAndSync(), 2000);
+                // Remove persisted signin flag if it exists
+                try { localStorage.removeItem('auth_signin_started'); } catch (e) {}
                 
             } else {
                 // User is signed out
@@ -3080,7 +3098,8 @@
                 
                 // Show auth modal if not in offline mode and a sign-in is not currently in progress
                 if (!localStorage.getItem('offlineMode') && !signInInProgress) {
-                    setTimeout(() => showAuthModal(), 500);
+                    const delayMs = (isIosDevice && isStandalonePWA) ? 5000 : 500; // give more time for redirect flows on iOS PWA
+                    setTimeout(() => showAuthModal(), delayMs);
                 } else if (signInInProgress) {
                     // If a sign-in flow is in progress, log and avoid showing the modal
                     console.log('⏳ Sign-in flow in progress, skipping auth modal');
@@ -3119,6 +3138,10 @@
 
                     if (shouldUseRedirectForAuth) {
                         console.log('📤 Using signInWithRedirect (iOS / installed PWA)');
+                        try {
+                            // persist a flag to indicate redirect started (so we don't re-show modal on reload)
+                            localStorage.setItem('auth_signin_started', Date.now().toString());
+                        } catch (e) {}
                         await auth.signInWithRedirect(googleProvider);
                         // Control never reaches here because page navigates away
                     } else {
@@ -3163,6 +3186,7 @@
                     // Sign-in attempt finished; reset flag after a small delay
                     setTimeout(() => {
                         signInInProgress = false;
+                        try { localStorage.removeItem('auth_signin_started'); } catch (e) {}
                     }, 500);
                 }
             }, true); // Use capture phase
@@ -3201,6 +3225,20 @@
             } else {
                 console.log('⏭️ Not showing auth modal on focus (offlineMode or sign-in in progress)');
             }
+            // If the user had attempted to sign-in via the system browser, check and clear the flag
+            try {
+                const openedInBrowser = localStorage.getItem('auth_open_in_browser');
+                if (openedInBrowser) {
+                    if (auth.currentUser) {
+                        console.log('🔁 User signed in via system browser - clearing flag');
+                        localStorage.removeItem('auth_open_in_browser');
+                        hideSyncStatus();
+                    } else {
+                        showSyncStatus('Returned from browser. Still not signed-in. If you completed sign-in in Safari, close the browser & return, or try signing in again from this app.', 'error');
+                        setTimeout(hideSyncStatus, 6000);
+                    }
+                }
+            } catch (e) { /* ignore */ }
         });
 
         // Logout
