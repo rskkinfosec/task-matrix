@@ -2678,6 +2678,17 @@
             modal.classList.remove('show');
         }
 
+        // Handle redirect result from Google Sign-In
+        firebase.auth().getRedirectResult().then((result) => {
+            if (result.credential) {
+                console.log('✅ Redirect result received!');
+                accessToken = result.credential.accessToken;
+                console.log('🔑 Got Google access token from redirect');
+            }
+        }).catch((error) => {
+            console.log('ℹ️ No redirect result or error:', error.code);
+        });
+
         // Authentication state observer
         auth.onAuthStateChanged((user) => {
             if (user) {
@@ -2741,30 +2752,35 @@
                 e.stopPropagation();
                 
                 try {
-                    showSyncStatus('Signing in...', 'syncing');
-                    console.log('📤 Calling signInWithPopup...');
+                    showSyncStatus('Signing in with Google...', 'syncing');
+                    console.log('📤 Calling signInWithRedirect (better for mobile)...');
                     
-                    const result = await auth.signInWithPopup(googleProvider);
+                    // Use signInWithRedirect for better mobile support
+                    await auth.signInWithRedirect(googleProvider);
                     
-                    console.log('✅ signInWithPopup returned:', result);
-                    
-                    // Get Google Access Token for Drive API
-                    const credential = result.credential;
-                    accessToken = credential.accessToken;
-                    
-                    console.log('✅ Signed in successfully');
-                    console.log('🔑 Got Google access token for Drive API');
-                    
-                    hideAuthModal();
-                    showSyncStatus('Signed in successfully!', 'success');
-                    setTimeout(hideSyncStatus, 2000);
+                    console.log('✅ Redirect initiated');
                     
                 } catch (error) {
                     console.error('❌ Sign-in error:', error);
                     console.error('❌ Error code:', error.code);
                     console.error('❌ Error message:', error.message);
-                    showSyncStatus('Sign-in failed: ' + error.message, 'error');
-                    setTimeout(hideSyncStatus, 3000);
+                    
+                    // Fallback to popup
+                    console.log('📤 Fallback: Trying signInWithPopup...');
+                    try {
+                        const result = await auth.signInWithPopup(googleProvider);
+                        console.log('✅ signInWithPopup returned:', result);
+                        const credential = result.credential;
+                        accessToken = credential.accessToken;
+                        console.log('✅ Signed in successfully');
+                        hideAuthModal();
+                        showSyncStatus('Signed in successfully!', 'success');
+                        setTimeout(hideSyncStatus, 2000);
+                    } catch (popupError) {
+                        console.error('❌ Popup sign-in also failed:', popupError);
+                        showSyncStatus('Sign-in failed: ' + popupError.message, 'error');
+                        setTimeout(hideSyncStatus, 3000);
+                    }
                 }
             }, true); // Use capture phase
             console.log('✅ Click listener added to Google Sign-In button');
