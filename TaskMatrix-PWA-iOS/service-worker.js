@@ -40,18 +40,36 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
+  // Only handle GET requests for caching; avoid caching PATCH/PUT/POST that might be blocked or unsupported
+  if (event.request.method !== 'GET') {
+    return event.respondWith(fetch(event.request));
+  }
+  // Ignore cross-origin requests (like Google APIs) to avoid caching and CORS complications
+  try {
+    const requestUrl = new URL(event.request.url);
+    if (requestUrl.origin !== self.location.origin) {
+      return event.respondWith(fetch(event.request));
+    }
+  } catch (e) {
+    // If URL parsing failed, fallback to network
+    return event.respondWith(fetch(event.request));
+  }
+
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
         // Return cached version or fetch from network
         return response || fetch(event.request)
           .then((fetchResponse) => {
-            // Cache new resources
-            return caches.open(CACHE_NAME)
-              .then((cache) => {
-                cache.put(event.request, fetchResponse.clone());
-                return fetchResponse;
-              });
+            // Cache only successful responses (status 200) to avoid caching errors
+            if (fetchResponse && fetchResponse.ok) {
+              return caches.open(CACHE_NAME)
+                .then((cache) => {
+                  cache.put(event.request, fetchResponse.clone());
+                  return fetchResponse;
+                });
+            }
+            return fetchResponse;
           });
       })
       .catch(() => {

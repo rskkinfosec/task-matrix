@@ -33,6 +33,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <!-- NOTE: Removed Google Identity Services client — using Firebase and redirect/popup only -->
     
     <style>
         * {
@@ -3013,7 +3014,7 @@
             measurementId: "G-QEGXT9N20T"
         };
 
-        // Initialize Firebase
+    // Initialize Firebase
         console.log('🔥 Initializing Firebase...');
         console.log('🔍 Firebase object:', typeof firebase, firebase);
         
@@ -3049,6 +3050,8 @@
     // Track if we've shown backup restore prompt for a given backup file
     let driveBackupPromptInProgress = false;
         const DRIVE_FILE_NAME = 'taskmatrix-backup.xlsx';
+
+    // NOTE: GSI variables removed. We use Firebase's popup/redirect flows only.
 
         // Check if user has dismissed auth modal before
         function shouldShowAuthModal() {
@@ -3098,6 +3101,8 @@
             modal.classList.remove('show');
         }
 
+    // NOTE: GSI integration and helpers removed per configuration - using Firebase's popup/redirect flows.
+
         // Handle redirect result from Google Sign-In
         console.log('🔄 Checking for redirect result from Google...');
         firebase.auth().getRedirectResult().then((result) => {
@@ -3143,11 +3148,10 @@
                     console.log('🔑 Got Firebase ID token');
                 });
                 
-                // Try to get Google access token for Drive API
-                firebase.auth().currentUser.getIdTokenResult().then(idTokenResult => {
-                    // The user's authentication token
-                    accessToken = idTokenResult.token;
-                });
+                // Try to capture Google OAuth access token passed on sign-in flows; do not override accessToken with Firebase ID token (not valid for Drive)
+                // idTokenResult contains Firebase ID token, which is not the same as an OAuth 2 access token for Google Drive.
+                // We only update accessToken when the sign-in result provides a Google OAuth credential (result.credential.accessToken)
+                // Leave accessToken as-is to avoid accidental usage of Firebase ID tokens for Drive API calls.
                 
                 // Update UI
                 displayUserProfile(user);
@@ -3858,6 +3862,12 @@
             );
             
             if (!response.ok) {
+                // If Unauthorized, prompt re-auth
+                if (response.status === 401 || response.status === 403) {
+                    console.warn('⚠️ findDriveFile: Drive API unauthorized, prompting re-sign-in');
+                    showSyncStatus('Drive authorization expired. Please sign in again to continue.', 'error');
+                    setTimeout(() => { hideSyncStatus(); showAuthModal(); }, 2000);
+                }
                 throw new Error('Failed to search Drive: ' + response.statusText);
             }
             
@@ -3927,6 +3937,11 @@
             );
             
             if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    console.warn('⚠️ createDriveFile: Drive API unauthorized, prompting re-sign-in');
+                    showSyncStatus('Drive authorization expired. Please sign in again to continue.', 'error');
+                    setTimeout(() => { hideSyncStatus(); showAuthModal(); }, 2000);
+                }
                 throw new Error('Failed to create file: ' + response.statusText);
             }
             
@@ -3944,12 +3959,19 @@
                 const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,appProperties,modifiedTime`, {
                     method: 'PATCH',
                     headers: {
-                        'Authorization': `Bearer ${accessToken}`,
+                            'Authorization': `Bearer ${accessToken}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify(body)
                 });
-                if (!res.ok) throw new Error('Failed to update metadata:' + res.statusText);
+                    if (!res.ok) {
+                        if (res.status === 401 || res.status === 403) {
+                            console.warn('⚠️ updateDriveFileMetadata: Drive API unauthorized, prompting re-sign-in');
+                            showSyncStatus('Drive authorization expired. Please sign in again to continue.', 'error');
+                            setTimeout(() => { hideSyncStatus(); showAuthModal(); }, 2000);
+                        }
+                        throw new Error('Failed to update metadata:' + res.statusText);
+                    }
                 const updated = await res.json();
                 try { localStorage.setItem('drive_lastRemoteModified:' + updated.id, Date.parse(updated.modifiedTime)); } catch (e) {}
                 return updated;
@@ -3982,6 +4004,11 @@
             
             const result = await response.json();
             if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    console.warn('⚠️ updateDriveFile: Drive API unauthorized, prompting re-sign-in');
+                    showSyncStatus('Drive authorization expired. Please sign in again to continue.', 'error');
+                    setTimeout(() => { hideSyncStatus(); showAuthModal(); }, 2000);
+                }
                 throw new Error('Failed to update file: ' + response.statusText);
             }
             // Save latest remote modified time
@@ -4006,6 +4033,11 @@
             );
             
             if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    console.warn('⚠️ downloadDriveFile: Drive API unauthorized, prompting re-sign-in');
+                    showSyncStatus('Drive authorization expired. Please sign in again to continue.', 'error');
+                    setTimeout(() => { hideSyncStatus(); showAuthModal(); }, 2000);
+                }
                 throw new Error('Failed to download file: ' + response.statusText);
             }
             
