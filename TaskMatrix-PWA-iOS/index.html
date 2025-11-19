@@ -1114,7 +1114,7 @@
     <div id="taskModal" class="modal">
         <div class="modal-content">
             <h3 id="modalTitle">Add New Task</h3>
-            <form id="taskForm">
+            <form id="taskForm" onsubmit="addTask(); return false;">
                 <input type="hidden" id="taskId">
                 <div class="form-group">
                     <label class="required">Task Title</label>
@@ -1352,10 +1352,35 @@
                     e.target.checked ? 'block' : 'none';
             });
 
-            document.getElementById('taskForm').addEventListener('submit', (e) => {
-                e.preventDefault();
-                addTask();
-            });
+            // Debug: ensure task form submit handler is attached and logs
+            const taskFormEl = document.getElementById('taskForm');
+            if (taskFormEl) {
+                console.log('🔧 Attaching taskForm submit handler');
+                taskFormEl.addEventListener('submit', (e) => {
+                    console.log('🟡 taskForm submit event fired');
+                    e.preventDefault();
+                    addTask();
+                });
+            } else {
+                console.warn('⚠️ taskForm element not found during init');
+            }
+
+            // Attach click handler to submit button for extra debugging
+            try {
+                const submitBtnDebug = document.getElementById('submitBtn');
+                if (submitBtnDebug) {
+                    submitBtnDebug.addEventListener('click', (e) => {
+                        console.log('🔘 Add Task button clicked (click event)', e);
+                        // Ensure form submit still occurs
+                        // If the button isn't inside form for some reason, call addTask directly
+                        if (!taskFormEl || !taskFormEl.contains(submitBtnDebug)) {
+                            console.log('ℹ️ Submit button is outside form; calling addTask directly');
+                            e.preventDefault();
+                            addTask();
+                        }
+                    });
+                }
+            } catch (e) { console.warn('⚠️ Failed to attach submitBtn debug click handler', e); }
 
             // Action button event listeners
             document.getElementById('exportBtn').addEventListener('click', exportToExcel);
@@ -1853,7 +1878,11 @@
             document.getElementById('taskModal').classList.add('active');
         }
 
+        let addTaskInProgress = false;
         function addTask() {
+            if (addTaskInProgress) { console.warn('⚠️ addTask already in progress'); return; }
+            addTaskInProgress = true;
+            console.log('🚀 addTask invoked');
             // Prevent duplicate submissions by disabling the submit button while processing
             try { document.getElementById('submitBtn').disabled = true; } catch (e) {}
             try {
@@ -1969,6 +1998,7 @@
                 console.error('❌ addTask error:', err);
                 showSyncStatus('Failed to add task: ' + (err.message || ''), 'error');
             } finally {
+                addTaskInProgress = false;
                 try { document.getElementById('submitBtn').disabled = false; } catch (e) {}
             }
 
