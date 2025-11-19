@@ -1203,6 +1203,9 @@
                 <button type="button" class="btn-primary" onclick="manualSync()" style="width: 100%; margin-bottom: 8px;">
                     🔄 Sync Now
                 </button>
+                <button type="button" class="btn-secondary" id="refreshDriveAuthBtn" style="width: 100%; margin-bottom: 8px;">
+                    🔁 Refresh Drive Authorization
+                </button>
                 <p style="font-size: 11px; color: #999; margin: 0;">
                     Auto-syncs when signed in. Manual sync uploads tasks to Google Drive.
                 </p>
@@ -1377,12 +1380,29 @@
                 completeSigninBtn.addEventListener('click', async () => {
                     showSyncStatus('Checking sign-in result...', 'syncing');
                     try {
-                        const result = await firebase.auth().getRedirectResult();
-                        console.log('📋 getRedirectResult returned (manual):', result);
-                        if (result && result.credential) {
-                            const credential = result.credential;
-                            accessToken = credential.accessToken || accessToken;
-                            console.log('🔑 Got Google access token from redirect (manual)');
+                        const token = await ensureOAuthAccessToken();
+                        if (token) {
+                            console.log('🔁 Complete Sign-In detected token via ensureOAuthAccessToken');
+                            showSyncStatus('Sign-in detected. Completing...', 'success');
+                            accessToken = token;
+                            hideAuthModal();
+                            setTimeout(hideSyncStatus, 1500);
+                            // Start a sync now that we have a token
+                            setTimeout(() => { if (currentUser && accessToken) syncToDrive(); }, 200);
+                        } else {
+                            // If not found, try getRedirectResult manually as a second attempt
+                            const result = await firebase.auth().getRedirectResult();
+                            console.log('📋 getRedirectResult returned (manual):', result);
+                            if (result && result.credential) {
+                                const credential = result.credential;
+                                accessToken = credential.accessToken || accessToken;
+                                console.log('🔑 Got Google access token from redirect (manual)');
+                                hideAuthModal();
+                                showSyncStatus('Sign-in detected. Completing...', 'success');
+                                setTimeout(() => { if (currentUser && accessToken) syncToDrive(); }, 200);
+                            } else {
+                                console.log('ℹ️ No credential found via getRedirectResult (manual)');
+                            }
                         }
                         // If still not signed in (no credential / no auth.currentUser) and we are in iOS PWA,
                         // try fallback to signInWithPopup (user initiated from click) as Safari redirect flows may not share session with installed PWA.
@@ -3036,10 +3056,11 @@
         console.log('✅ Google Drive scope added');
 
     // Decide which auth method to use
-    const isIosDevice = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    const isStandalonePWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    // More robust iOS/iPadOS detection including iPadOS (Mac UA on iPad) and touch point check
+    const isIosDevice = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+    const isStandalonePWA = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (window.navigator && window.navigator.standalone === true);
     const shouldUseRedirectForAuth = isIosDevice || isStandalonePWA;
-    console.log(`🔐 Auth strategy: ${shouldUseRedirectForAuth ? 'redirect (iOS/PWA)' : 'popup (desktop/browser)'}`);
+    console.log('🔐 Auth detection:', { isIosDevice, isStandalonePWA, shouldUseRedirectForAuth });
 
     // Auth state variables
         let currentUser = null;
@@ -3129,6 +3150,22 @@
             }
         });
 
+        // Try to capture a Google OAuth access token if the user was redirected back to the app
+        async function ensureOAuthAccessToken() {
+            if (accessToken) return accessToken;
+            try {
+                const result = await firebase.auth().getRedirectResult();
+                if (result && result.credential && result.credential.accessToken) {
+                    accessToken = result.credential.accessToken;
+                    console.log('🔁 ensureOAuthAccessToken: found accessToken from redirect');
+                    return accessToken;
+                }
+            } catch (e) {
+                console.warn('⚠️ ensureOAuthAccessToken getRedirectResult error', e);
+            }
+            return null;
+        }
+
         // Authentication state observer
         auth.onAuthStateChanged((user) => {
             // Log state for debugging
@@ -3209,11 +3246,13 @@
                 e.stopPropagation();
                 
                 try {
-                    // Mark sign-in as started to prevent modal re-show and race conditions
-                    signInInProgress = true;
+                        // Mark sign-in as started to prevent modal re-show and race conditions
+                        signInInProgress = true;
                     showSyncStatus('Signing in with Google...', 'syncing');
 
-                    if (shouldUseRedirectForAuth) {
+                    // Recompute decision at time of click in case environment changed (e.g., PWA install state)
+                    const useRedirectNow = (isIosDevice || isStandalonePWA);
+                    if (useRedirectNow) {
                         console.log('📤 Using signInWithRedirect (iOS / installed PWA)');
                         try {
                             // persist a flag to indicate redirect started (so we don't re-show modal on reload)
@@ -3229,6 +3268,21 @@
                         console.log('✅ signInWithPopup returned:', result);
                         const credential = result.credential;
                         accessToken = credential?.accessToken || null;
+                        // If popup returned but no credential (common in iOS PWA), gracefully fall back to redirect or show guidance
+                        if (!result || !credential) {
+                            console.warn('⚠️ signInWithPopup returned no credential; attempting redirect fallback (if applicable) or requesting browser sign-in');
+                            if (isIosDevice || isStandalonePWA) {
+                                try {
+                                    localStorage.setItem('auth_signin_started', Date.now().toString());
+                                } catch (e) {}
+                                // Redirect fallback will navigate away; user should return and press 'Complete Sign-In' if needed
+                                await auth.signInWithRedirect(googleProvider);
+                                return; // will navigate away
+                            } else {
+                                showSyncStatus('Popup did not return credentials; please try again or use browser sign-in.', 'error');
+                                setTimeout(hideSyncStatus, 4000);
+                            }
+                        }
                         hideAuthModal();
                         showSyncStatus('Signed in successfully!', 'success');
                         setTimeout(hideSyncStatus, 2000);
@@ -3280,6 +3334,56 @@
             console.log('📴 Continuing in offline mode');
         });
 
+        // Refresh Drive Authorization - attempts to re-acquire OAuth access token via popup/redirect
+        async function refreshDriveAuthorization() {
+            if (!auth) {
+                showSyncStatus('Auth system not available.', 'error');
+                setTimeout(hideSyncStatus, 2000);
+                return;
+            }
+            try {
+                showSyncStatus('Refreshing Drive authorization...', 'syncing');
+                // On iOS PWA, use redirect; otherwise try popup
+                if (shouldUseRedirectForAuth) {
+                    try {
+                        localStorage.setItem('auth_signin_started', Date.now().toString());
+                    } catch (e) { }
+                    await auth.signInWithRedirect(googleProvider);
+                    // Browser will navigate away; no further code here
+                } else {
+                    // If user is already signed in, try to re-auth with popup to request Drive scope again
+                    let result;
+                    try {
+                        if (auth.currentUser && auth.currentUser.reauthenticateWithPopup) {
+                            // reauthenticateWithPopup requires firebase user Object and provider
+                            result = await auth.currentUser.reauthenticateWithPopup(googleProvider);
+                        } else {
+                            result = await auth.signInWithPopup(googleProvider);
+                        }
+                    } catch (reauthErr) {
+                        console.warn('⚠️ reauthenticateWithPopup failed, falling back to signInWithPopup', reauthErr);
+                        result = await auth.signInWithPopup(googleProvider);
+                    }
+                    const credential = result.credential;
+                    accessToken = credential?.accessToken || accessToken;
+                    showSyncStatus('Drive authorization refreshed', 'success');
+                    setTimeout(hideSyncStatus, 2000);
+                    // Force sync once token is available
+                    if (currentUser && accessToken) setTimeout(() => syncToDrive(), 200);
+                }
+            } catch (error) {
+                console.warn('⚠️ refreshDriveAuthorization failed:', error);
+                showSyncStatus('Failed to refresh Drive authorization: ' + (error.message || ''), 'error');
+                setTimeout(hideSyncStatus, 3000);
+            }
+        }
+
+        // Wire up UI button for refresh Drive Auth
+        const refreshBtn = document.getElementById('refreshDriveAuthBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => refreshDriveAuthorization());
+        }
+
         // Show Sign In Button Handler (for when user is in offline mode)
         document.getElementById('showSignInBtn').addEventListener('click', () => {
             localStorage.removeItem('offlineMode');
@@ -3316,21 +3420,17 @@
                     }
                 }
             } catch (e) { /* ignore */ }
-            // Re-run redirect result check if user returns from browser (iOS PWA case)
+            // Re-run redirect check for OAuth access token (use helper) if user returns from browser (iOS PWA case)
             if (!auth.currentUser) {
-                // If sign-in seems to be not completed, probe for redirect result which may be available after returning from browser
-                console.log('🔁 focus: Re-checking redirect result for sign-in');
-                try {
-                    firebase.auth().getRedirectResult().then((result) => {
-                        console.log('📋 getRedirectResult returned (focus):', result);
-                        if (result && result.credential) {
-                            accessToken = result.credential?.accessToken || accessToken;
-                            console.log('🔑 Got Google access token from redirect (focus)');
-                        }
-                    }).catch((error) => {
-                        console.warn('⚠️ getRedirectResult error (focus)', error);
-                    });
-                } catch (err) { console.warn('⚠️ getRedirectResult failed (focus)', err); }
+                console.log('🔁 focus: ensureOAuthAccessToken (focus)');
+                ensureOAuthAccessToken().then(tok => {
+                    if (tok) {
+                        console.log('🔑 Access token found on focus via redirect');
+                        showSyncStatus('Sign-in detected. Completing...', 'success');
+                        setTimeout(hideSyncStatus, 1500);
+                        hideAuthModal();
+                    }
+                }).catch(err => console.warn('⚠️ ensureOAuthAccessToken failed (focus)', err));
             }
         });
 
@@ -3346,13 +3446,12 @@
                 }
                 // Also trigger redirect-result to capture sign-in result when returning from Safari
                 if (!auth.currentUser) {
-                    firebase.auth().getRedirectResult().then((result) => {
-                        console.log('📋 getRedirectResult returned (visibilitychange):', result);
-                        if (result && result.credential) {
-                            accessToken = result.credential?.accessToken || accessToken;
+                    ensureOAuthAccessToken().then(tok => {
+                        if (tok) {
                             console.log('🔑 Got Google access token from redirect (visibilitychange)');
+                            hideAuthModal();
                         }
-                    }).catch(err => console.warn('⚠️ getRedirectResult error (visibility):', err));
+                    }).catch(err => console.warn('⚠️ ensureOAuthAccessToken error (visibility):', err));
                 }
             }
         });
@@ -3418,6 +3517,7 @@
             
             // Update sync info in settings
             updateSyncInfo(user);
+            try { document.getElementById('refreshDriveAuthBtn').disabled = false; } catch (e) {}
         }
 
         // Hide user profile
@@ -3436,6 +3536,7 @@
             
             // Update sync info in settings
             updateSyncInfo(null);
+            try { document.getElementById('refreshDriveAuthBtn').disabled = true; } catch (e) {}
         }
 
         // Update sync info in settings modal
@@ -3469,9 +3570,14 @@
                 document.body.appendChild(dbg);
             }
             const userEmail = (auth && auth.currentUser) ? auth.currentUser.email : 'null';
+            const iosFlag = isIosDevice ? 'true' : 'false';
+            const standaloneFlag = isStandalonePWA ? 'true' : 'false';
+            const navStandalone = (() => { try { return (window.navigator && window.navigator.standalone) ? 'true' : 'false'; } catch (e) { return 'unknown'; } })();
+            const mediaStandalone = (() => { try { return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ? 'true' : 'false'; } catch (e) { return 'unknown'; } })();
+            const hasDriveToken = accessToken ? 'yes' : 'no';
             const openedFlag = (() => { try { return localStorage.getItem('auth_open_in_browser') || 'null'; } catch (e) { return 'err'; } })();
             const startedFlag = (() => { try { return localStorage.getItem('auth_signin_started') || 'null'; } catch (e) { return 'err'; } })();
-            dbg.textContent = `auth.currentUser:${userEmail} | signInInProgress:${signInInProgress} | opened:${openedFlag} | started:${startedFlag} | iosPWA:${isIosDevice && isStandalonePWA}`;
+            dbg.textContent = `auth.currentUser:${userEmail} | signInInProgress:${signInInProgress} | hasDriveToken:${hasDriveToken} | opened:${openedFlag} | started:${startedFlag} | iosDevice:${iosFlag} | standalone:${standaloneFlag} | navigator.standalone:${navStandalone} | display-mode:${mediaStandalone}`;
         }
 
         setInterval(updateDebugOverlay, 800);
@@ -3847,7 +3953,8 @@
 
         // Find file on Google Drive by name
     async function findDriveFile(fileName) {
-            // Security check: Ensure user is authenticated and has valid token
+            // Security check: Try to recover auth token if redirected back
+            await ensureOAuthAccessToken();
             if (!accessToken || !currentUser) {
                 throw new Error('Unauthorized: Not signed in or no access token');
             }
@@ -3909,8 +4016,10 @@
 
         // Create file on Google Drive
         async function createDriveFile(fileName, blob) {
-            // Security check: Ensure user is authenticated and has valid token
+            // Security check: Try to recover access token (if redirect just happened)
+            await ensureOAuthAccessToken();
             if (!accessToken || !currentUser) {
+                showSyncStatus('Drive not authorized. Please refresh Drive authorization from settings.', 'error');
                 throw new Error('Unauthorized: Not signed in or no access token');
             }
             
@@ -3953,7 +4062,11 @@
 
         // Update only metadata (appProperties) for a given file
         async function updateDriveFileMetadata(fileId, appProps) {
-            if (!accessToken || !currentUser) throw new Error('Unauthorized');
+            await ensureOAuthAccessToken();
+            if (!accessToken || !currentUser) {
+                showSyncStatus('Drive not authorized. Please refresh Drive authorization from settings.', 'error');
+                throw new Error('Unauthorized');
+            }
             try {
                 const body = { appProperties: appProps };
                 const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,appProperties,modifiedTime`, {
@@ -3981,7 +4094,9 @@
         // Update existing file on Google Drive
         async function updateDriveFile(fileId, blob) {
             // Security check: Ensure user is authenticated and has valid token
+            await ensureOAuthAccessToken();
             if (!accessToken || !currentUser) {
+                showSyncStatus('Drive not authorized. Please refresh Drive authorization from settings.', 'error');
                 throw new Error('Unauthorized: Not signed in or no access token');
             }
             
@@ -4019,7 +4134,9 @@
         // Download file from Google Drive
         async function downloadDriveFile(fileId) {
             // Security check: Ensure user is authenticated and has valid token
+            await ensureOAuthAccessToken();
             if (!accessToken || !currentUser) {
+                showSyncStatus('Drive not authorized. Please refresh Drive authorization from settings.', 'error');
                 throw new Error('Unauthorized: Not signed in or no access token');
             }
             
