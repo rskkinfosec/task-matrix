@@ -1854,6 +1854,9 @@
         }
 
         function addTask() {
+            // Prevent duplicate submissions by disabling the submit button while processing
+            try { document.getElementById('submitBtn').disabled = true; } catch (e) {}
+            try {
             // When editing, get quadrant from selector; otherwise from current quadrant
             if (editingTaskId) {
                 currentQuadrant = document.getElementById('taskQuadrant').value;
@@ -1892,14 +1895,16 @@
                     task.updatedAt = now;
                     // Recompute canonical hash after editing so deduping remains valid
                     task.canonicalHash = generateTaskHash(task);
+            // Re-enable submit
+            try { document.getElementById('submitBtn').disabled = false; } catch (e) {}
                 }
             } else {
                 // Create new task
                 const now = Date.now();
                 // If CSV/Excel contains UpdatedAt or FieldUpdatedAt columns, parse them
-                const rowUpdatedAt = getField(['UpdatedAt']) || getField(['updatedAt']);
+                const rowUpdatedAt = (typeof getField === 'function' ? (getField(['UpdatedAt']) || getField(['updatedAt'])) : null);
                 const parsedUpdatedAt = rowUpdatedAt ? Date.parse(rowUpdatedAt) : now;
-                const rowFieldUpdatedAt = getField(['FieldUpdatedAt']) || getField(['fieldUpdatedAt']);
+                const rowFieldUpdatedAt = (typeof getField === 'function' ? (getField(['FieldUpdatedAt']) || getField(['fieldUpdatedAt'])) : null);
                 const parsedFieldUpdatedAt = rowFieldUpdatedAt ? (() => {
                     try { return JSON.parse(rowFieldUpdatedAt); } catch (e) { return null; }
                 })() : null;
@@ -1956,6 +1961,15 @@
                 // Assign GUID (stable id) to support merge/dedupe across backups
                 if (!task.guid) task.guid = generateUUID();
                 tasks.push(task);
+                // Re-enable submit
+                try { document.getElementById('submitBtn').disabled = false; } catch (e) {}
+            }
+
+            } catch (err) {
+                console.error('❌ addTask error:', err);
+                showSyncStatus('Failed to add task: ' + (err.message || ''), 'error');
+            } finally {
+                try { document.getElementById('submitBtn').disabled = false; } catch (e) {}
             }
 
             saveTasks();
