@@ -1413,7 +1413,7 @@
                         if (token) {
                             console.log('🔁 Complete Sign-In detected token via ensureOAuthAccessToken');
                             showSyncStatus('Sign-in detected. Completing...', 'success');
-                            accessToken = token;
+                            persistAccessToken(token);
                             hideAuthModal();
                             // Pull remote tasks now that we have token & (likely) user
                             setTimeout(() => { if (accessToken && auth.currentUser) syncFromDrive(); }, 300);
@@ -1426,7 +1426,7 @@
                             console.log('📋 getRedirectResult returned (manual):', result);
                             if (result && result.credential) {
                                 const credential = result.credential;
-                                accessToken = credential.accessToken || accessToken;
+                                persistAccessToken(credential.accessToken || null);
                                 console.log('🔑 Got Google access token from redirect (manual)');
                                 hideAuthModal();
                                 showSyncStatus('Sign-in detected. Completing...', 'success');
@@ -1452,7 +1452,7 @@
                                 const popupResult = await auth.signInWithPopup(googleProvider);
                                 console.log('✅ Popup fallback succeeded (manual completeSignIn):', popupResult);
                                 const credential = popupResult.credential;
-                                accessToken = credential?.accessToken || accessToken;
+                                persistAccessToken(credential?.accessToken || null);
                                 hideAuthModal();
                                 showSyncStatus('Signed in successfully!', 'success');
                                 setTimeout(hideSyncStatus, 2000);
@@ -3117,6 +3117,31 @@
     // Auth state variables
         let currentUser = null;
         let accessToken = null;
+        function persistAccessToken(token) {
+            if (!token) return;
+            accessToken = token;
+            try { localStorage.setItem('drive_access_token', token); localStorage.setItem('drive_access_token_expiry', (Date.now() + (55*60*1000)).toString()); } catch (e) { console.warn('⚠️ Failed to persist drive token', e); }
+            console.log('🔐 Persisted Drive access token to localStorage');
+            try { updateSyncInfo(currentUser); } catch (e) {}
+        }
+
+        function clearPersistedAccessToken() {
+            accessToken = null;
+            try { localStorage.removeItem('drive_access_token'); localStorage.removeItem('drive_access_token_expiry'); } catch (e) {}
+            console.log('🔐 Cleared persisted Drive access token');
+        }
+        // Load any cached Drive access token from localStorage (short-lived)
+        try {
+            const savedDriveToken = localStorage.getItem('drive_access_token');
+            const savedDriveTokenExpiry = parseInt(localStorage.getItem('drive_access_token_expiry') || '0');
+            if (savedDriveToken && savedDriveTokenExpiry && Date.now() < savedDriveTokenExpiry) {
+                accessToken = savedDriveToken;
+                console.log('🔑 Loaded Drive access token from cache (localStorage)');
+            } else {
+                // clear expired token
+                try { localStorage.removeItem('drive_access_token'); localStorage.removeItem('drive_access_token_expiry'); } catch (e) {}
+            }
+        } catch (e) { console.warn('⚠️ Could not read persisted Drive token', e); }
         let syncInProgress = false;
     // Track sign-in state to avoid showing modal while sign-in is in progress
     let signInInProgress = false;
@@ -3182,8 +3207,8 @@
             console.log('📋 getRedirectResult returned:', result);
             if (result && result.credential) {
                 console.log('✅ Redirect result received!');
-                accessToken = result.credential.accessToken;
-                console.log('🔑 Got Google access token from redirect');
+                persistAccessToken(result.credential.accessToken);
+                console.log('🔑 Got Google access token from redirect and persisted');
             } else {
                 console.log('ℹ️ No credential in redirect result');
                 // Provide a hint for developers and users in iOS PWA context
@@ -3208,7 +3233,7 @@
             try {
                 const result = await firebase.auth().getRedirectResult();
                 if (result && result.credential && result.credential.accessToken) {
-                    accessToken = result.credential.accessToken;
+                    persistAccessToken(result.credential.accessToken);
                     console.log('🔁 ensureOAuthAccessToken: found accessToken from redirect');
                     return accessToken;
                 }
@@ -3219,7 +3244,7 @@
         }
 
         // Authentication state observer
-        auth.onAuthStateChanged((user) => {
+    auth.onAuthStateChanged((user) => {
             // Log state for debugging
             console.log('🔁 onAuthStateChanged triggered. signInInProgress:', signInInProgress);
             // Clear sign-in-in-progress on any auth state change to avoid stale UI
@@ -3263,7 +3288,7 @@
             } else {
                 // User is signed out
                 currentUser = null;
-                accessToken = null;
+                clearPersistedAccessToken();
                 console.log('ℹ️ User signed out');
                 try { localStorage.setItem('auth_lastSignOut', Date.now().toString()); } catch (e) { console.warn('⚠️ Failed to write auth_lastSignOut', e); }
                 hideUserProfile();
@@ -3325,7 +3350,7 @@
                         console.log('📘 signInWithPopup completed, result received');
                         console.log('✅ signInWithPopup returned:', result);
                         const credential = result.credential;
-                        accessToken = credential?.accessToken || null;
+                        persistAccessToken(credential?.accessToken || null);
                         // If popup returned but no credential (common in iOS PWA), gracefully fall back to redirect or show guidance
                         if (!result || !credential) {
                             console.warn('⚠️ signInWithPopup returned no credential; attempting redirect fallback (if applicable) or requesting browser sign-in');
@@ -3363,7 +3388,7 @@
                         try {
                             const popupResult = await auth.signInWithPopup(googleProvider);
                             console.log('✅ Popup fallback succeeded:', popupResult);
-                            accessToken = popupResult.credential?.accessToken || null;
+                            persistAccessToken(popupResult.credential?.accessToken || null);
                             hideAuthModal();
                             showSyncStatus('Signed in successfully!', 'success');
                             setTimeout(hideSyncStatus, 2000);
@@ -3423,7 +3448,7 @@
                         result = await auth.signInWithPopup(googleProvider);
                     }
                     const credential = result.credential;
-                    accessToken = credential?.accessToken || accessToken;
+                        persistAccessToken(credential?.accessToken || null);
                     // Update UI to reflect new Drive authorization
                     updateSyncInfo(auth.currentUser || currentUser);
                     showSyncStatus('Drive authorization refreshed', 'success');
@@ -3532,6 +3557,7 @@
                     console.log('🧾 logoutBtn triggered signOut');
                     await auth.signOut();
                     console.log('👋 Signed out successfully');
+                    clearPersistedAccessToken();
                     showAuthModal();
                 } catch (error) {
                     console.error('❌ Logout error:', error);
@@ -3618,8 +3644,23 @@
         function updateSyncInfo(user) {
             const syncStatusText = document.getElementById('syncStatusText');
             if (user) {
-                if (accessToken) {
-                    syncStatusText.innerHTML = `✅ Signed in as <strong>${user.email}</strong><br>Auto-sync enabled`;
+                if (!accessToken) {
+                    showSyncStatus('Signed in but Drive not authorized. Attempting to refresh Drive authorization (desktop only).', 'error');
+                    // Auto attempt reauthorization on desktop browsers
+                    try {
+                        if (!shouldUseRedirectForAuth) {
+                            // Avoid aggressive retries: only retry if not recently attempted
+                            const lastAttempt = parseInt(localStorage.getItem('drive_auth_lastAttempt') || '0');
+                            if (!lastAttempt || (Date.now() - lastAttempt) > (30 * 1000)) {
+                                localStorage.setItem('drive_auth_lastAttempt', Date.now().toString());
+                                console.log('🔁 No drive token; attempting refreshDriveAuthorization automatically (desktop)');
+                                refreshDriveAuthorization();
+                            }
+                        } else {
+                            // iOS PWA: show hint to use Open in Browser to complete Drive scope
+                            showSyncStatus('Signed in but Drive not authorized. Open Settings to refresh Drive authorization (or use Open in Browser).', 'error');
+                        }
+                    } catch (e) { console.warn('⚠️ drive authorization auto-refresh attempt failed', e); }
                     syncStatusText.style.color = '#10b981';
                 } else {
                     syncStatusText.innerHTML = `✅ Signed in as <strong>${user.email}</strong><br>Drive not authorized — click 'Enable Drive Sync'`;
@@ -3655,9 +3696,10 @@
             const navStandalone = (() => { try { return (window.navigator && window.navigator.standalone) ? 'true' : 'false'; } catch (e) { return 'unknown'; } })();
             const mediaStandalone = (() => { try { return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ? 'true' : 'false'; } catch (e) { return 'unknown'; } })();
             const hasDriveToken = accessToken ? 'yes' : 'no';
+            const tokenExpiry = (() => { try { const e = parseInt(localStorage.getItem('drive_access_token_expiry') || '0'); if (!e) return 'none'; const left = Math.max(0, e - Date.now()); return left ? Math.round(left / 60000) + 'm' : 'expired'; } catch (e) { return 'err'; } })();
             const openedFlag = (() => { try { return localStorage.getItem('auth_open_in_browser') || 'null'; } catch (e) { return 'err'; } })();
             const startedFlag = (() => { try { return localStorage.getItem('auth_signin_started') || 'null'; } catch (e) { return 'err'; } })();
-            dbg.textContent = `auth.currentUser:${userEmail} | signInInProgress:${signInInProgress} | hasDriveToken:${hasDriveToken} | opened:${openedFlag} | started:${startedFlag} | iosDevice:${iosFlag} | standalone:${standaloneFlag} | navigator.standalone:${navStandalone} | display-mode:${mediaStandalone}`;
+            dbg.textContent = `auth.currentUser:${userEmail} | signInInProgress:${signInInProgress} | hasDriveToken:${hasDriveToken} | tokenExpiry:${tokenExpiry} | opened:${openedFlag} | started:${startedFlag} | iosDevice:${iosFlag} | standalone:${standaloneFlag} | navigator.standalone:${navStandalone} | display-mode:${mediaStandalone}`;
         }
 
         setInterval(updateDebugOverlay, 800);
