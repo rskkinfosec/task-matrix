@@ -3645,6 +3645,8 @@
             const syncStatusText = document.getElementById('syncStatusText');
             if (user) {
                 if (!accessToken) {
+                    syncStatusText.innerHTML = `✅ Signed in as <strong>${user.email}</strong><br>Drive not authorized — click 'Enable Drive Sync'`;
+                    syncStatusText.style.color = '#f59e0b';
                     showSyncStatus('Signed in but Drive not authorized. Attempting to refresh Drive authorization (desktop only).', 'error');
                     // Auto attempt reauthorization on desktop browsers
                     try {
@@ -3661,10 +3663,10 @@
                             showSyncStatus('Signed in but Drive not authorized. Open Settings to refresh Drive authorization (or use Open in Browser).', 'error');
                         }
                     } catch (e) { console.warn('⚠️ drive authorization auto-refresh attempt failed', e); }
-                    syncStatusText.style.color = '#10b981';
                 } else {
-                    syncStatusText.innerHTML = `✅ Signed in as <strong>${user.email}</strong><br>Drive not authorized — click 'Enable Drive Sync'`;
-                    syncStatusText.style.color = '#f59e0b';
+                    syncStatusText.innerHTML = `✅ Signed in as <strong>${user.email}</strong><br>Drive authorized & syncing!`;
+                    syncStatusText.style.color = '#10b981';
+                    showSyncStatus('Drive authorized! Ready to sync.', 'success');
                 }
             } else {
                 syncStatusText.innerHTML = '❌ Not signed in. Sign in to enable cloud sync.';
