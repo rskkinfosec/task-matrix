@@ -989,6 +989,7 @@
         <div style="position: absolute; top: 10px; right: 10px; background: #f3f4f6; padding: 8px 12px; border-radius: 20px; font-size: 11px; display: flex; align-items: center; gap: 6px;">
             <span id="loginBadgeText">Offline</span>
             <span id="loginBadgeDot" style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></span>
+            <button class="logout-btn" id="enableDriveSyncBtn" style="margin-left:8px; display:none;">Enable Drive Sync</button>
         </div>
 
         <!-- User Profile (shown when signed in) -->
@@ -3423,10 +3424,15 @@
                     }
                     const credential = result.credential;
                     accessToken = credential?.accessToken || accessToken;
+                    // Update UI to reflect new Drive authorization
+                    updateSyncInfo(auth.currentUser || currentUser);
                     showSyncStatus('Drive authorization refreshed', 'success');
                     setTimeout(hideSyncStatus, 2000);
                     // Force sync once token is available
-                    if (currentUser && accessToken) setTimeout(() => syncToDrive(), 200);
+                    if (currentUser && accessToken) {
+                        setTimeout(() => syncFromDrive(), 200);
+                        setTimeout(() => syncToDrive(), 400);
+                    }
                 }
             } catch (error) {
                 console.warn('⚠️ refreshDriveAuthorization failed:', error);
@@ -3575,6 +3581,17 @@
             // Update sync info in settings
             updateSyncInfo(user);
             try { document.getElementById('refreshDriveAuthBtn').disabled = false; } catch (e) {}
+            // If user is signed in but has no Drive token, show enableDriveSync button
+            try { 
+                const enableDriveBtn = document.getElementById('enableDriveSyncBtn');
+                if (enableDriveBtn) {
+                    if (!accessToken) {
+                        enableDriveBtn.style.display = 'inline-block';
+                    } else {
+                        enableDriveBtn.style.display = 'none';
+                    }
+                }
+            } catch (e) {}
         }
 
         // Hide user profile
@@ -3594,14 +3611,20 @@
             // Update sync info in settings
             updateSyncInfo(null);
             try { document.getElementById('refreshDriveAuthBtn').disabled = true; } catch (e) {}
+            try { document.getElementById('enableDriveSyncBtn').style.display = 'none'; } catch (e) {}
         }
 
         // Update sync info in settings modal
         function updateSyncInfo(user) {
             const syncStatusText = document.getElementById('syncStatusText');
             if (user) {
-                syncStatusText.innerHTML = `✅ Signed in as <strong>${user.email}</strong><br>Auto-sync enabled`;
-                syncStatusText.style.color = '#10b981';
+                if (accessToken) {
+                    syncStatusText.innerHTML = `✅ Signed in as <strong>${user.email}</strong><br>Auto-sync enabled`;
+                    syncStatusText.style.color = '#10b981';
+                } else {
+                    syncStatusText.innerHTML = `✅ Signed in as <strong>${user.email}</strong><br>Drive not authorized — click 'Enable Drive Sync'`;
+                    syncStatusText.style.color = '#f59e0b';
+                }
             } else {
                 syncStatusText.innerHTML = '❌ Not signed in. Sign in to enable cloud sync.';
                 syncStatusText.style.color = '#ef4444';
@@ -3787,31 +3810,41 @@
                         }
                     }
                     data.forEach((row, index) => {
+                        // Helper to tolerate header name variations (case-insensitive) for XLSX imports
+                        const getRowField = (r, possibleNames) => {
+                            for (let name of possibleNames) {
+                                const key = Object.keys(r).find(k => k.toLowerCase() === name.toLowerCase());
+                                if (key && r[key] !== undefined && r[key] !== null) return r[key];
+                            }
+                            return '';
+                        };
                         const t = {
                             id: Date.now() + Math.floor(Math.random()*100000),
                             parentTab: tabId,
-                            title: row.Title || '',
-                            description: row.Description || '',
-                            quadrant: (row.Quadrant || 'q2').toLowerCase(),
-                            priority: row.Priority || 'normal',
-                            estimateValue: row['Estimate Value'] || 0,
-                            estimateUnit: row['Estimate Unit'] || 'hours',
-                            deadline: row.Deadline || '',
-                            recurring: row.Recurring === 'Yes',
-                            frequency: row.Frequency || 'daily',
-                            completed: row.Completed === 'Yes',
-                            completedAt: row['Completed At'] || null,
-                            deadlineMissed: row['Deadline Missed'] === 'Yes',
+                            title: String(getRowField(row, ['Title', 'Task', 'Name', 'Task Title']) || ''),
+                            description: String(getRowField(row, ['Description', 'Desc', 'Details']) || ''),
+                            quadrant: String(getRowField(row, ['Quadrant', 'Q', 'Priority Level']) || 'q2').toLowerCase(),
+                            priority: String(getRowField(row, ['Priority']) || 'normal'),
+                            estimateValue: parseInt(getRowField(row, ['Estimate Value', 'Estimate', 'Time', 'Hours']) || 0) || 0,
+                            estimateUnit: String(getRowField(row, ['Estimate Unit', 'Unit', 'Time Unit']) || 'hours'),
+                            deadline: String(getRowField(row, ['Deadline', 'Due Date', 'Date']) || ''),
+                            recurring: (String(getRowField(row, ['Recurring', 'Repeat']) || '').toLowerCase() === 'yes'),
+                            frequency: String(getRowField(row, ['Frequency']) || 'daily'),
+                            completed: (String(getRowField(row, ['Completed']) || '').toLowerCase() === 'yes'),
+                            completedAt: String(getRowField(row, ['Completed At', 'CompletedAt']) || '') || null,
+                            deadlineMissed: (String(getRowField(row, ['Deadline Missed', 'DeadlineMissed']) || '').toLowerCase() === 'yes'),
                             mustHave: false,
                             goodToHave: false,
                             createdAt: new Date().toISOString(),
                             actualTime: null,
-                            updatedAt: row['UpdatedAt'] ? Date.parse(row['UpdatedAt']) : Date.now(),
-                            fieldUpdatedAt: row['FieldUpdatedAt'] ? JSON.parse(row['FieldUpdatedAt']) : null,
-                            canonicalHash: row['CanonicalHash'] || null,
-                            guid: row['GUID'] || null
+                            updatedAt: (getRowField(row, ['UpdatedAt', 'updatedAt']) ? Date.parse(getRowField(row, ['UpdatedAt', 'updatedAt'])) : Date.now()),
+                            fieldUpdatedAt: (getRowField(row, ['FieldUpdatedAt', 'fieldUpdatedAt']) ? JSON.parse(getRowField(row, ['FieldUpdatedAt', 'fieldUpdatedAt'])) : null),
+                            canonicalHash: String(getRowField(row, ['CanonicalHash', 'canonicalHash']) || null),
+                            guid: String(getRowField(row, ['GUID', 'Guid', 'Id', 'ID']) || null)
                         };
                         if (!t.canonicalHash) t.canonicalHash = generateTaskHash(t);
+                        // Skip rows without a title to avoid importing empty tasks
+                        if (!t.title || (typeof t.title === 'string' && t.title.trim() === '')) return;
                         backupTasks.push(t);
                     });
                 });
@@ -4263,6 +4296,14 @@
         const manualPullBtn = document.getElementById('manualPullBtn');
         if (manualPullBtn) {
             manualPullBtn.addEventListener('click', () => manualPullFromDrive());
+        }
+        // Wire up enableDriveSync button
+        const enableDriveBtn = document.getElementById('enableDriveSyncBtn');
+        if (enableDriveBtn) {
+            enableDriveBtn.addEventListener('click', () => {
+                // Attempt to reauthorize Drive access (desktop popup preferred)
+                refreshDriveAuthorization();
+            });
         }
     </script>
 
