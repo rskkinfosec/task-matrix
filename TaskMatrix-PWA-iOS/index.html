@@ -1526,23 +1526,18 @@
                             }
                         }
                         // If still not signed in (no credential / no auth.currentUser) and we are in iOS PWA,
-                        // try fallback to signInWithPopup (user initiated from click) as Safari redirect flows may not share session with installed PWA.
+                        // try fallback to signInWithRedirect (user initiated from click) - no popup windows
                         if (!auth.currentUser) {
                             try {
-                                console.log('⏳ Manual completeSignIn: No current user detected after getRedirectResult. Trying signInWithPopup fallback.');
-                                const popupResult = await auth.signInWithPopup(googleProvider);
-                                console.log('✅ Popup fallback succeeded (manual completeSignIn):', popupResult);
-                                const credential = popupResult.credential;
-                                persistAccessToken(credential?.accessToken || null);
-                                hideAuthModal();
-                                showSyncStatus('Signed in successfully!', 'success');
-                                setTimeout(hideSyncStatus, 2000);
-                            } catch (popupErr) {
-                                console.warn('⚠️ Popup fallback failed (manual completeSignIn):', popupErr);
-                                // If popup fallback fails, then it's likely due to iOS PWA restrictions; instruct user to use Safari
-                                const warningText = isIosDevice && isStandalonePWA ? 'On iOS (installed PWA), sign-in may not persist. Please use "Open in Browser to Sign In" and then return to the app.' : 'Could not complete sign-in automatically.';
-                                showSyncStatus(warningText, 'error');
-                                setTimeout(hideSyncStatus, 8000);
+                                console.log('⏳ Manual completeSignIn: No current user detected after getRedirectResult. Trying signInWithRedirect fallback.');
+                                await auth.signInWithRedirect(googleProvider);
+                                console.log('✅ Redirect initiated (manual completeSignIn) - page will reload');
+                                // Note: page will reload after redirect, so no need to call hideAuthModal() here
+                                return;
+                            } catch (redirectErr) {
+                                console.warn('⚠️ Redirect fallback failed (manual completeSignIn):', redirectErr);
+                                showSyncStatus('Sign-in redirect failed: ' + (redirectErr.message || ''), 'error');
+                                setTimeout(hideSyncStatus, 5000);
                             }
                         }
                         // Reset button state
@@ -4171,15 +4166,21 @@
                     if (['home', 'official', 'self'].includes(tabName)) {
                         tabId = tabName;
                     } else {
-                        // Use tab name directly as ID
-                        tabId = sheetName;
-                        // Check if a custom tab with this name already exists
-                        const existingTab = customTabs.find(t => t.name.toLowerCase() === sheetName.toLowerCase());
-                        if (!existingTab) {
+                        // Use tab name directly as ID - check if already exists first
+                        const existingTab = customTabs.find(t => 
+                            t.name.toLowerCase().trim() === sheetName.toLowerCase().trim() ||
+                            t.id.toLowerCase().trim() === sheetName.toLowerCase().trim()
+                        );
+                        
+                        if (existingTab) {
+                            // Use existing tab's ID to avoid duplicates
+                            tabId = existingTab.id;
+                            console.log(`✅ Using existing tab "${existingTab.name}" (ID: ${tabId})`);
+                        } else {
+                            // Create new tab only if it truly doesn't exist
+                            tabId = sheetName;
                             customTabs.push({ id: sheetName, name: sheetName });
                             console.log(`➕ Created new custom tab "${sheetName}"`);
-                        } else {
-                            console.log(`📋 Found existing tab "${sheetName}"`);
                         }
                     }
                     data.forEach((row, index) => {
