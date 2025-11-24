@@ -1037,6 +1037,7 @@
         <div id="todayView" class="today-view">
             <div class="today-tasks">
                 <h3>📋 Top 10 Tasks for TODAY</h3>
+                <button id="clearAllTasksBtn" class="btn btn-danger" style="margin: 10px 0; padding: 10px 20px; background: #ef4444; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">🗑️ Clear All Tasks</button>
                 <div id="todayTasksList"></div>
             </div>
         </div>
@@ -1307,6 +1308,45 @@
     <script>
         let tasks = JSON.parse(localStorage.getItem('tasks_v2')) || [];
         let customTabs = JSON.parse(localStorage.getItem('customTabs')) || [];
+        
+        // Deduplicate custom tabs on load (remove tabs with same name, keep first occurrence)
+        // Now that tabs use name as ID, deduplication is simpler
+        const deduplicatedTabs = [];
+        const seenNames = new Set();
+        
+        customTabs.forEach(tab => {
+            const normalizedName = tab.name.toLowerCase().trim();
+            if (!seenNames.has(normalizedName)) {
+                seenNames.add(normalizedName);
+                // Ensure ID matches name (migrate old timestamp-based IDs)
+                if (tab.id !== tab.name) {
+                    console.log(`🔄 Migrating tab "${tab.name}" from ID ${tab.id} to ${tab.name}`);
+                    // Update tasks that use old ID
+                    let tasks = JSON.parse(localStorage.getItem('tasks_v2')) || [];
+                    let updated = false;
+                    tasks.forEach(task => {
+                        if (task.parentTab === tab.id) {
+                            task.parentTab = tab.name;
+                            updated = true;
+                        }
+                    });
+                    if (updated) {
+                        localStorage.setItem('tasks_v2', JSON.stringify(tasks));
+                    }
+                    tab.id = tab.name;
+                }
+                deduplicatedTabs.push(tab);
+            } else {
+                console.log(`🗑️ Removing duplicate tab: "${tab.name}" (ID: ${tab.id})`);
+            }
+        });
+        
+        if (deduplicatedTabs.length !== customTabs.length) {
+            customTabs = deduplicatedTabs;
+            localStorage.setItem('customTabs', JSON.stringify(customTabs));
+            console.log(`✅ Cleaned up ${customTabs.length} unique tabs (removed ${customTabs.length - deduplicatedTabs.length} duplicates)`);
+        }
+        
         let currentParentTab = 'today';
         let currentSubTab = 'active';
         let currentQuadrant = 'q1';
@@ -1336,6 +1376,33 @@
             loadSettings();
             updateClearTabButton(); // Initialize clear button visibility
 
+            // Wire up Clear All Tasks button
+            const clearAllBtn = document.getElementById('clearAllTasksBtn');
+            if (clearAllBtn) {
+                clearAllBtn.addEventListener('click', () => {
+                    const taskCount = tasks.length;
+                    if (taskCount === 0) {
+                        alert('No tasks to clear!');
+                        return;
+                    }
+                    const confirmed = confirm(`⚠️ WARNING: This will permanently delete ALL ${taskCount} tasks from ALL tabs!\n\nThis action cannot be undone.\n\nAre you sure?`);
+                    if (confirmed) {
+                        const doubleCheck = confirm(`⚠️ FINAL CONFIRMATION\n\nYou are about to delete ${taskCount} tasks.\n\nClick OK to DELETE EVERYTHING or Cancel to keep your tasks.`);
+                        if (doubleCheck) {
+                            tasks = [];
+                            saveTasks();
+                            renderTasks();
+                            renderTodayTasks();
+                            alert(`✅ Cleared ${taskCount} tasks successfully!`);
+                            // Sync to Drive to update backup
+                            if (currentUser && accessToken) {
+                                setTimeout(() => syncToDrive(), 500);
+                            }
+                        }
+                    }
+                });
+            }
+            
             // Re-check auth once DOM is ready; if already signed in, hide auth modal
             setTimeout(() => {
                 try {
@@ -2381,8 +2448,15 @@
         function addNewTab() {
             const tabName = prompt('Enter new tab name:');
             if (tabName && tabName.trim()) {
-                const tabId = 'custom_' + Date.now();
-                customTabs.push({ id: tabId, name: tabName.trim() });
+                const trimmedName = tabName.trim();
+                // Check if tab with this name already exists
+                const exists = customTabs.some(t => t.name.toLowerCase() === trimmedName.toLowerCase());
+                if (exists) {
+                    alert(`Tab "${trimmedName}" already exists!`);
+                    return;
+                }
+                // Use tab name as ID (simple string comparison)
+                customTabs.push({ id: trimmedName, name: trimmedName });
                 saveCustomTabs();
                 
                 // Recreate tabs
@@ -4076,21 +4150,20 @@
                     const data = XLSX.utils.sheet_to_json(worksheet);
                     const tabName = sheetName.toLowerCase().replace(/[^a-z0-9]/g, '');
                     
-                    // Determine tabId: check if this is a built-in tab, or find existing custom tab by name
+                    // Determine tabId: use plain tab name for simplicity
                     let tabId;
                     if (['home', 'official', 'self'].includes(tabName)) {
                         tabId = tabName;
                     } else {
+                        // Use tab name directly as ID
+                        tabId = sheetName;
                         // Check if a custom tab with this name already exists
                         const existingTab = customTabs.find(t => t.name.toLowerCase() === sheetName.toLowerCase());
-                        if (existingTab) {
-                            tabId = existingTab.id;
-                            console.log(`📋 Found existing tab "${sheetName}" with ID: ${tabId}`);
+                        if (!existingTab) {
+                            customTabs.push({ id: sheetName, name: sheetName });
+                            console.log(`➕ Created new custom tab "${sheetName}"`);
                         } else {
-                            // Create new custom tab with timestamp-based ID
-                            tabId = 'custom_' + Date.now();
-                            customTabs.push({ id: tabId, name: sheetName });
-                            console.log(`➕ Created new custom tab "${sheetName}" with ID: ${tabId}`);
+                            console.log(`📋 Found existing tab "${sheetName}"`);
                         }
                     }
                     data.forEach((row, index) => {
