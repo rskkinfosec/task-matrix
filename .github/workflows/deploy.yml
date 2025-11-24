@@ -19,11 +19,11 @@ jobs:
 
     - name: Install test dependencies
       run: npm install
-      working-directory: ./tests
+      working-directory: TaskMatrix-PWA-iOS/tests
 
     - name: Run full test suite
       run: npm run test:all
-      working-directory: ./tests
+      working-directory: TaskMatrix-PWA-iOS/tests
 
     - name: Check build artifacts
       shell: bash
