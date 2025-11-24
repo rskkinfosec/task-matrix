@@ -1323,9 +1323,22 @@
         // Now that tabs use name as ID, deduplication is simpler
         const deduplicatedTabs = [];
         const seenNames = new Set();
+        const defaultTabIds = ['home', 'official', 'self'];
         
         customTabs.forEach(tab => {
             const normalizedName = tab.name.toLowerCase().trim();
+            
+            // Skip duplicate default tabs (keep only one per default ID)
+            if (defaultTabIds.includes(tab.id)) {
+                if (seenNames.has(tab.id)) {
+                    console.log(`🗑️ Removing duplicate default tab: "${tab.name}" (ID: ${tab.id})`);
+                    return;
+                }
+                seenNames.add(tab.id);
+                deduplicatedTabs.push(tab);
+                return;
+            }
+            
             if (!seenNames.has(normalizedName)) {
                 seenNames.add(normalizedName);
                 // Ensure ID matches name (migrate old timestamp-based IDs)
@@ -4430,7 +4443,11 @@
 
                 // Deduplicate customTabs before saving and remove any that duplicate default tabs
                 const defaultTabIds = ['home', 'official', 'self'];
-                const displayNameMap = { 'family': 'home', 'official': 'official', 'selfinterest': 'self' };
+                const reverseDisplayNameMap = {
+                    'family': ['home', 'family'],
+                    'official': ['official'],
+                    'selfinterest': ['self', 'selfinterest']
+                };
                 
                 const uniqueTabs = [];
                 const seenTabNames = new Set();
@@ -4438,10 +4455,23 @@
                     const normalizedName = tab.name.toLowerCase().trim();
                     const normalizedId = tab.id.toLowerCase().replace(/[^a-z0-9]/g, '');
                     
-                    // Check if this is a duplicate of a default tab
-                    if (displayNameMap[normalizedId]) {
-                        console.log(`🗑️ Removing duplicate of default tab: "${tab.name}" (ID: ${tab.id})`);
-                        return; // Skip this tab
+                    // Check if this tab's ID is a default tab ID
+                    if (defaultTabIds.includes(tab.id)) {
+                        console.log(`🗑️ Skipping default tab: "${tab.name}" (ID: ${tab.id})`);
+                        // Keep it, but only one copy per default ID
+                        if (!seenTabNames.has(normalizedName)) {
+                            seenTabNames.add(normalizedName);
+                            uniqueTabs.push(tab);
+                        }
+                        return;
+                    }
+                    
+                    // Check if normalized name/ID maps to a default tab
+                    for (let [displayName, defaultIds] of Object.entries(reverseDisplayNameMap)) {
+                        if (defaultIds.includes(normalizedId)) {
+                            console.log(`🗑️ Removing duplicate of default tab: "${tab.name}" (normalized ID: ${normalizedId} maps to default)`);
+                            return; // Skip this custom tab
+                        }
                     }
                     
                     if (!seenTabNames.has(normalizedName)) {
