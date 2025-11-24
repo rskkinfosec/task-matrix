@@ -44,13 +44,19 @@
     // Show account picker so user can select from device Google accounts instead of manual entry
     googleProvider.setCustomParameters({ prompt: 'select_account' });
 
+    console.log('🌐 Current URL:', window.location.href);
+    console.log('🌐 Origin:', window.location.origin);
+
     document.getElementById('signin').addEventListener('click', async () => {
       try {
         // Mark that sign-in started
         try { localStorage.setItem('auth_signin_started', Date.now().toString()); } catch(e){}
+        console.log('🔐 Starting signInWithRedirect from:', window.location.href);
         await auth.signInWithRedirect(googleProvider);
       } catch (err) {
         console.error('Redirect sign-in failed', err);
+        console.error('Error code:', err.code);
+        console.error('Error message:', err.message);
         alert('Redirect sign-in failed: ' + (err.message || err));
       }
     });
@@ -58,10 +64,17 @@
     // Show friendly message after redirection
     firebase.auth().getRedirectResult().then(result => {
       if (result && result.user) {
+        console.log('✅ Sign-in successful:', result.user.email);
         document.body.innerHTML = '<div style="padding:20px; text-align:center;">\n\n<p>Sign-in complete. You can close this tab and return to the TaskMatrix app.</p>\n\n</div>';
         try { localStorage.setItem('auth_open_in_browser', 'true'); } catch(e){}
+      } else {
+        console.log('ℹ️ No redirect result yet (first page load)');
       }
-    }).catch(err => console.error('getRedirectResult redirectSignin callback', err));
+    }).catch(err => {
+      console.error('getRedirectResult error:', err);
+      console.error('Error code:', err.code);
+      console.error('Error message:', err.message);
+    });
   </script>
 </body>
 </html>

@@ -1,0 +1,504 @@
+# TaskMatrix PWA - Module Design Document
+
+## System Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    TASKMATRIX PWA APPLICATION                        │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────┬──────────────────┬──────────────────┬─────────────┐
+│   Presentation   │     State        │     Sync         │  Storage    │
+│     Layer        │    Management    │     Engine       │   Layer     │
+└──────────────────┴──────────────────┴──────────────────┴─────────────┘
+
+    UI Components      Data Models      Sync Logic       localStorage
+     (HTML/CSS)       (Tasks/Tabs)      (Drive API)      Firebase Auth
+    (JavaScript)     (State Arrays)     (XLSX)           Google Drive
+```
+
+---
+
+## Module Breakdown
+
+### 1. PRESENTATION LAYER
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              HTML/CSS/UI Components                      │
+├─────────────────────────────────────────────────────────┤
+│                                                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │   Header     │  │   Task Form  │  │  Task List   │  │
+│  │  (Auth UI)   │  │  (Add/Edit)  │  │  (Display)   │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
+│                                                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │ Tab Bar      │  │ Quadrants    │  │   Today      │  │
+│  │(Navigation)  │  │(Q1-Q4)       │  │ (Dashboard)  │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
+│                                                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │ Export Btn   │  │ Import Btn   │  │  Settings    │  │
+│  │(to Drive)    │  │(from Drive)  │  │   Modal      │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
+│                                                           │
+└─────────────────────────────────────────────────────────┘
+
+Key Functions:
+- initTabs()           : Render tab bar
+- renderTasks()       : Display tasks by quadrant
+- renderTodayTasks()  : Show today's priority tasks
+- showModal()         : Display dialogs
+- hideModal()         : Close dialogs
+```
+
+### 2. STATE MANAGEMENT LAYER
+
+```
+┌─────────────────────────────────────────────────────────┐
+│         In-Memory Data Structures                        │
+├─────────────────────────────────────────────────────────┤
+│                                                           │
+│  ┌──────────────────────────────────────────────┐       │
+│  │ tasks[] Array - All tasks with state         │       │
+│  ├──────────────────────────────────────────────┤       │
+│  │ {                                            │       │
+│  │   id: number,                                │       │
+│  │   title: string,                             │       │
+│  │   parentTab: string,                         │       │
+│  │   quadrant: 'q1'|'q2'|'q3'|'q4',            │       │
+│  │   syncState: 'Added'|'Updated'|'SYNCED'|..│       │
+│  │   guid: string (stable across devices)      │       │
+│  │   canonicalHash: string (for dedup)         │       │
+│  │   updatedAt: timestamp (for conflicts)      │       │
+│  │   fieldUpdatedAt: object (field timestamps)  │       │
+│  │   ... other task properties                  │       │
+│  │ }                                            │       │
+│  └──────────────────────────────────────────────┘       │
+│                                                           │
+│  ┌──────────────────────────────────────────────┐       │
+│  │ customTabs[] Array - User-created tabs       │       │
+│  ├──────────────────────────────────────────────┤       │
+│  │ {                                            │       │
+│  │   id: string,       // tab name              │       │
+│  │   name: string      // display name          │       │
+│  │ }                                            │       │
+│  │                                              │       │
+│  │ NOTE: Default tabs (home, official, self)   │       │
+│  │       are NOT stored here!                   │       │
+│  └──────────────────────────────────────────────┘       │
+│                                                           │
+│  ┌──────────────────────────────────────────────┐       │
+│  │ currentParentTab: string (active tab)        │       │
+│  │ currentQuadrant: string (active quadrant)    │       │
+│  │ settings: object (user preferences)          │       │
+│  └──────────────────────────────────────────────┘       │
+│                                                           │
+└─────────────────────────────────────────────────────────┘
+
+Key Functions:
+- addTask()           : Create new task
+- updateTask()        : Modify existing task
+- deleteTask()        : Soft delete task
+- addCustomTab()      : Create new tab
+- deleteCustomTab()   : Remove tab
+```
+
+### 3. SYNC ENGINE
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   Sync State Machine                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│    Local Changes (Task Operations)                              │
+│           │                                                      │
+│           ▼                                                      │
+│    ┌──────────────┐                                             │
+│    │ Added        │ ◄──────────────┐                            │
+│    │ Updated      │                │                            │
+│    │ Deleted      │        ┌───────┴────────┐                   │
+│    └──────────────┘        │                │                   │
+│           │         syncToDrive()    syncFromDrive()            │
+│           │         (Upload)         (Download)                 │
+│           ▼                │                │                   │
+│    ┌──────────────┐        │                │                   │
+│    │ SYNCED       │ ◄──────┘                │                   │
+│    └──────────────┘                        ▼                   │
+│           ▲              ┌──────────────────────┐               │
+│           │              │ Remote Changes       │               │
+│           │              │ (Drive Sheet Rows)   │               │
+│           └──────────────┤                      │               │
+│                          │ GUID/Hash Matching  │               │
+│                          │ Timestamp Conflict  │               │
+│                          │ Resolution          │               │
+│                          └──────────────────────┘               │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+
+Sync Workflow:
+
+    ┌─────────────┐
+    │   Device A  │
+    └─────────────┘
+         │ saveTasks() every 3s
+         ▼
+    ┌──────────────────┐
+    │ syncToDrive()    │
+    │ - Export to XLSX │
+    │ - Mark SYNCED    │
+    └──────────────────┘
+         │
+         ▼ Google Drive API
+    ┌────────────────┐
+    │ taskmatrix-    │
+    │ backup.xlsx    │
+    └────────────────┘
+         │
+         ▼ Google Drive API
+    ┌──────────────────┐
+    │ syncFromDrive()  │
+    │ - Import XLSX    │
+    │ - Merge state    │
+    │ - Resolve        │
+    │   conflicts      │
+    └──────────────────┘
+         │
+         ▼
+    ┌─────────────┐
+    │   Device B  │
+    └─────────────┘
+
+Key Functions:
+- syncToDrive()         : Upload tasks to Drive
+- syncFromDrive()       : Download and merge tasks
+- mergeRemoteState()    : Combine local + remote
+- generateUUID()        : Stable task ID
+- generateTaskHash()    : Content hash for dedup
+```
+
+### 4. STORAGE LAYER
+
+```
+┌─────────────────────────────────────────┐
+│      Browser Storage Systems             │
+├─────────────────────────────────────────┤
+│                                          │
+│  ┌──────────────────────────────────┐  │
+│  │  localStorage (Persistent)        │  │
+│  ├──────────────────────────────────┤  │
+│  │ • tasks_v2 (JSON stringified)    │  │
+│  │ • customTabs (JSON stringified)  │  │
+│  │ • appSettings (JSON stringified) │  │
+│  │ • auth_user_email (string)       │  │
+│  │ • drive_access_token (string)    │  │
+│  │ • drive_access_token_expiry (ms) │  │
+│  │ • drive_lastMerged (timestamp)   │  │
+│  └──────────────────────────────────┘  │
+│                                          │
+│  ┌──────────────────────────────────┐  │
+│  │  Firebase Auth (Persistent)      │  │
+│  ├──────────────────────────────────┤  │
+│  │ • currentUser (Firebase User)    │  │
+│  │ • auth.currentUser.email         │  │
+│  │ • ID token (auto-refreshed)      │  │
+│  └──────────────────────────────────┘  │
+│                                          │
+│  ┌──────────────────────────────────┐  │
+│  │  Google Drive (Remote)           │  │
+│  ├──────────────────────────────────┤  │
+│  │ • taskmatrix-backup.xlsx         │  │
+│  │   - One sheet per tab            │  │
+│  │   - Columns: task fields         │  │
+│  │   - Rows: individual tasks       │  │
+│  └──────────────────────────────────┘  │
+│                                          │
+└─────────────────────────────────────────┘
+
+Data Flow:
+    In-Memory       →  localStorage  →  Google Drive
+    (tasks[] array)     (JSON string)   (XLSX file)
+    
+    Google Drive    →  localStorage  →  In-Memory
+    (XLSX file)        (JSON parse)     (tasks[] array)
+```
+
+### 5. AUTHENTICATION & API LAYER
+
+```
+┌────────────────────────────────────────────────────────┐
+│              Authentication Flow                        │
+├────────────────────────────────────────────────────────┤
+│                                                         │
+│  User clicks "Login"                                   │
+│         │                                              │
+│         ▼                                              │
+│  ┌─────────────────────────────────┐                  │
+│  │ auth.signInWithRedirect()        │                  │
+│  │ (No popup - seamless redirect)   │                  │
+│  └─────────────────────────────────┘                  │
+│         │                                              │
+│         ▼                                              │
+│  ┌─────────────────────────────────┐                  │
+│  │ User grants permissions:         │                  │
+│  │ • Google Drive access           │                  │
+│  │ • File read/write               │                  │
+│  │ • Task metadata access          │                  │
+│  └─────────────────────────────────┘                  │
+│         │                                              │
+│         ▼                                              │
+│  ┌─────────────────────────────────┐                  │
+│  │ persistAccessToken()             │                  │
+│  │ • Store in localStorage          │                  │
+│  │ • Set 55-min expiry              │                  │
+│  └─────────────────────────────────┘                  │
+│         │                                              │
+│         ▼                                              │
+│  ┌─────────────────────────────────┐                  │
+│  │ User logged in                   │                  │
+│  │ Ready to sync                    │                  │
+│  └─────────────────────────────────┘                  │
+│                                                         │
+└────────────────────────────────────────────────────────┘
+
+APIs Used:
+- Firebase Auth API (Login)
+- Google Drive API v3 (File operations)
+- XLSX.js (Excel parsing)
+```
+
+---
+
+## Data Structures Diagram
+
+```
+TASK OBJECT (Full State):
+┌────────────────────────────────────────────────────────┐
+│ id                    : number (local ID)               │
+│ guid                  : string (cross-device ID)        │
+│ title                 : string                          │
+│ description           : string                          │
+│ parentTab             : string (tab name)               │
+│ quadrant              : 'q1'|'q2'|'q3'|'q4'            │
+│ priority              : 'low'|'normal'|'high'|'urgent' │
+│ estimateValue         : number (hours/days/weeks)      │
+│ estimateUnit          : string                          │
+│ deadline              : string (YYYY-MM-DD)            │
+│ recurring             : boolean                        │
+│ frequency             : 'daily'|'weekly'|'monthly'    │
+│ completed             : boolean                        │
+│ completedAt           : string (ISO timestamp)         │
+│ deadlineMissed        : boolean                        │
+│ createdAt             : string (ISO timestamp)         │
+│ updatedAt             : string (ISO timestamp) ◄─┐     │
+│ syncState             : 'Added'|'Updated'|'SYNCED'... │ Sync
+│ fieldUpdatedAt        : object {field: timestamp}  ◄─┤ Control
+│ canonicalHash         : string (content hash) ◄────┘   │
+│ mustHave              : boolean                        │
+│ goodToHave            : boolean                        │
+└────────────────────────────────────────────────────────┘
+
+SYNC STATE TRANSITIONS:
+        Creation       Edit           Delete
+        (user)         (user)         (user)
+           │             │              │
+           ▼             ▼              ▼
+        'Added' ───→ 'Updated'      'Deleted'
+           │             │              │
+           └─────────────┴──────────────┘
+                      │
+                      ▼ syncToDrive()
+                   'SYNCED' ◄──────┐
+                      │            │
+                      └────────────┘
+                  (stays SYNCED until
+                   next edit/delete)
+```
+
+---
+
+## API Endpoints Used
+
+```
+GOOGLE DRIVE API:
+
+1. List Files:
+   GET /drive/v3/files?q=name='taskmatrix-backup.xlsx'
+
+2. Download File:
+   GET /drive/v3/files/{fileId}?alt=media
+
+3. Upload File:
+   POST /upload/drive/v3/files/{fileId}?uploadType=media
+
+4. Create File:
+   POST /drive/v3/files
+
+FIREBASE AUTH:
+
+1. Sign In with Redirect:
+   auth.signInWithRedirect(googleProvider)
+
+2. Get Redirect Result:
+   auth.getRedirectResult()
+
+3. Sign Out:
+   auth.signOut()
+
+4. Current User:
+   auth.currentUser.getIdToken()
+```
+
+---
+
+## Performance Characteristics
+
+```
+Operation               Time Complexity    Space Complexity
+─────────────────────────────────────────────────────────
+Add Task                O(1)               O(1)
+Update Task             O(n) search        O(1) update
+Delete Task             O(n) search        O(1) mark
+Search Tasks            O(n)               O(m) results
+Sync to Drive           O(n × 17 fields)   O(n) temp array
+Import from Drive       O(n)               O(n × 17 fields)
+Merge States            O(n × m) GUID match O(n+m) union
+Deduplication           O(n × log n) hash  O(n) hash table
+
+Where n = number of tasks, m = number of remote tasks
+
+Expected Performance:
+- 1000 tasks:     Sync ~100ms, Import ~150ms
+- 5000 tasks:     Sync ~500ms, Import ~750ms
+- 10000 tasks:    Sync ~1000ms, Import ~1500ms
+```
+
+---
+
+## Module Dependencies
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ HTML/CSS Rendering (Presentation)                       │
+│   │   ├── addEventListener, innerHTML, classList       │
+│   │   └── CSS media queries for responsive design       │
+│   │                                                      │
+│   ▼                                                      │
+├─────────────────────────────────────────────────────────┤
+│ DOM Manipulation Functions (UI Updates)                 │
+│   │   ├── initTabs()                                    │
+│   │   ├── renderTasks()                                 │
+│   │   ├── showModal(), hideModal()                      │
+│   │   └── updateTaskUI()                                │
+│   │                                                      │
+│   ▼                                                      │
+├─────────────────────────────────────────────────────────┤
+│ State Management Functions (Data Modification)          │
+│   │   ├── addTask()                                     │
+│   │   ├── updateTask()                                  │
+│   │   ├── deleteTask()                                  │
+│   │   ├── addCustomTab()                                │
+│   │   └── saveTasks(), saveCustomTabs()                 │
+│   │                                                      │
+│   ▼                                                      │
+├─────────────────────────────────────────────────────────┤
+│ Storage Functions (Persistence)                         │
+│   │   ├── localStorage.getItem()                        │
+│   │   ├── localStorage.setItem()                        │
+│   │   └── JSON.parse(), JSON.stringify()                │
+│   │                                                      │
+│   ▼                                                      │
+├─────────────────────────────────────────────────────────┤
+│ Sync Engine Functions (Multi-Device)                    │
+│   │   ├── syncToDrive() ──→ Google Drive API            │
+│   │   ├── syncFromDrive() ──→ Google Drive API          │
+│   │   ├── mergeRemoteState()                            │
+│   │   └── generateUUID(), generateTaskHash()            │
+│   │                                                      │
+│   ▼                                                      │
+├─────────────────────────────────────────────────────────┤
+│ Authentication Functions (OAuth)                        │
+│   │   ├── auth.signInWithRedirect() ──→ Firebase API    │
+│   │   ├── auth.signOut()                                │
+│   │   └── ensureOAuthAccessToken()                      │
+│   │                                                      │
+│   ▼                                                      │
+├─────────────────────────────────────────────────────────┤
+│ External Libraries                                      │
+│   ├── Firebase SDK (v10.7.1 compat)                     │
+│   └── XLSX.js (Excel parsing)                           │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Deduplication Strategy
+
+```
+LAYER 1: Initialization
+┌─────────────────────────────────┐
+│ Load from localStorage          │
+│ Filter out default tab IDs      │
+│ Remove duplicate tab names      │
+└─────────────────────────────────┘
+           │
+           ▼
+LAYER 2: During Sync Download
+┌─────────────────────────────────┐
+│ Parse XLSX sheet names          │
+│ Map display names to default IDs │
+│ Only create if not exists       │
+└─────────────────────────────────┘
+           │
+           ▼
+LAYER 3: After Merge
+┌─────────────────────────────────┐
+│ Remove default tab IDs from     │
+│ customTabs array                │
+│ Deduplicate by name (case-insensitive)
+└─────────────────────────────────┘
+           │
+           ▼
+LAYER 4: UI Rendering
+┌─────────────────────────────────┐
+│ Deduplicate before rendering    │
+│ No delete buttons on defaults   │
+└─────────────────────────────────┘
+```
+
+---
+
+## Next Version Improvements
+
+```
+TODO:
+┌─────────────────────────────────────────────────────────┐
+│ 1. Implement Delta Sync                                 │
+│    Only sync changed tasks (use syncState field)        │
+│    Reduce bandwidth and sync time                       │
+│                                                          │
+│ 2. Add Offline Queue                                    │
+│    Buffer changes when offline                          │
+│    Auto-sync when reconnected                           │
+│                                                          │
+│ 3. Real-time Collaboration                              │
+│    Multiple users editing same workspace                │
+│    Live updates using WebSockets                        │
+│                                                          │
+│ 4. Audit Trail                                          │
+│    Track all changes with who/when/what                 │
+│    Rollback capability                                  │
+│                                                          │
+│ 5. Performance Optimization                             │
+│    Pagination for large task lists                      │
+│    Lazy loading of completed tasks                      │
+│    IndexedDB for 10k+ tasks                             │
+│                                                          │
+│ 6. Mobile App (React Native)                            │
+│    Share sync engine with PWA                           │
+│    Native notifications                                 │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
