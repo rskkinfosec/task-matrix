@@ -41,6 +41,8 @@
     const auth = firebase.auth();
     const googleProvider = new firebase.auth.GoogleAuthProvider();
     googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+    // Show account picker so user can select from device Google accounts instead of manual entry
+    googleProvider.setCustomParameters({ prompt: 'select_account' });
 
     document.getElementById('signin').addEventListener('click', async () => {
       try {

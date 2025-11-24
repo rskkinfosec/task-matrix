@@ -1418,7 +1418,14 @@
             }
             const completeSigninBtn = document.getElementById('completeSignInBtn');
             if (completeSigninBtn) {
-                completeSigninBtn.addEventListener('click', async () => {
+                completeSigninBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    // Disable button to prevent double-clicks
+                    completeSigninBtn.disabled = true;
+                    completeSigninBtn.textContent = 'Checking...';
+                    
                     showSyncStatus('Checking sign-in result...', 'syncing');
                     try {
                         const token = await ensureOAuthAccessToken();
@@ -1429,9 +1436,9 @@
                             hideAuthModal();
                             // Pull remote tasks now that we have token & (likely) user
                             setTimeout(() => { if (accessToken && auth.currentUser) syncFromDrive(); }, 300);
-                            setTimeout(hideSyncStatus, 1500);
                             // Start a sync now that we have a token
                             setTimeout(() => { if (currentUser && accessToken) syncToDrive(); }, 200);
+                            setTimeout(hideSyncStatus, 1500);
                         } else {
                             // If not found, try getRedirectResult manually as a second attempt
                             const result = await firebase.auth().getRedirectResult();
@@ -1445,8 +1452,10 @@
                                 setTimeout(() => { if (currentUser && accessToken) syncToDrive(); }, 200);
                                 // Also pull tasks from remote since this was a redirect-based sign-in
                                 setTimeout(() => { if (currentUser && accessToken) syncFromDrive(); }, 400);
+                                setTimeout(hideSyncStatus, 1500);
                             } else {
                                 console.log('ℹ️ No credential found via getRedirectResult (manual)');
+                                setTimeout(hideSyncStatus, 2000);
                             }
                         }
                         // If still not signed in (no credential / no auth.currentUser) and we are in iOS PWA,
@@ -1469,15 +1478,23 @@
                                 setTimeout(hideSyncStatus, 8000);
                             }
                         }
-                        // If signed in, onAuthStateChanged will handle UI
-                        setTimeout(hideSyncStatus, 2000);
-                        setTimeout(() => { signInInProgress = false; try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {} }, 800);
+                        // Reset button state
+                        setTimeout(() => { 
+                            completeSigninBtn.disabled = false;
+                            completeSigninBtn.textContent = 'Complete Sign-In';
+                            signInInProgress = false;
+                            try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {}
+                        }, 800);
                     } catch (error) {
                         console.error('❌ getRedirectResult error (manual)', error);
                         showSyncStatus('Sign-in check failed: ' + (error.message || ''), 'error');
-                        setTimeout(hideSyncStatus, 4000);
-                        // Reset state after manual check
-                        setTimeout(() => { signInInProgress = false; try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {} }, 800);
+                        setTimeout(() => {
+                            completeSigninBtn.disabled = false;
+                            completeSigninBtn.textContent = 'Complete Sign-In';
+                            signInInProgress = false;
+                            try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {}
+                            hideSyncStatus();
+                        }, 4000);
                     }
                 });
             }
@@ -3110,7 +3127,9 @@
         
         // Request Google Drive access scope
         googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
-        console.log('✅ Google Drive scope added');
+        // Show account picker so user can select from device Google accounts
+        googleProvider.setCustomParameters({ prompt: 'select_account' });
+        console.log('✅ Google Drive scope added and account picker enabled');
         
         // Helper to persist user email for iOS PWA recovery
         function persistUserEmail(email) {
@@ -3339,8 +3358,8 @@
                         // After Drive sync completes, refresh the UI
                         try { renderTasks(); } catch (e) { console.warn('⚠️ renderTasks error after signin syncFromDrive', e); }
                         try { renderTodayTasks(); } catch (e) { console.warn('⚠️ renderTodayTasks error after signin syncFromDrive', e); }
-                        // After loading from Drive, also upload current local tasks to Drive
-                        if (accessToken && tasks.length > 0) {
+                        // After loading from Drive, also upload current local tasks to Drive (sync happens regardless of task count)
+                        if (accessToken) {
                             setTimeout(() => syncToDrive(), 500);
                         }
                     });
