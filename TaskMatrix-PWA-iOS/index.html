@@ -4075,11 +4075,22 @@
                     const worksheet = workbook.Sheets[sheetName];
                     const data = XLSX.utils.sheet_to_json(worksheet);
                     const tabName = sheetName.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const tabId = ['home', 'official', 'self'].includes(tabName) ? tabName : 'custom_' + tabName;
-                    // Ensure custom tab exists
-                    if (!['home', 'official', 'self'].includes(tabId)) {
-                        if (!customTabs.find(t => t.id === tabId)) {
+                    
+                    // Determine tabId: check if this is a built-in tab, or find existing custom tab by name
+                    let tabId;
+                    if (['home', 'official', 'self'].includes(tabName)) {
+                        tabId = tabName;
+                    } else {
+                        // Check if a custom tab with this name already exists
+                        const existingTab = customTabs.find(t => t.name.toLowerCase() === sheetName.toLowerCase());
+                        if (existingTab) {
+                            tabId = existingTab.id;
+                            console.log(`📋 Found existing tab "${sheetName}" with ID: ${tabId}`);
+                        } else {
+                            // Create new custom tab with timestamp-based ID
+                            tabId = 'custom_' + Date.now();
                             customTabs.push({ id: tabId, name: sheetName });
+                            console.log(`➕ Created new custom tab "${sheetName}" with ID: ${tabId}`);
                         }
                     }
                     data.forEach((row, index) => {
