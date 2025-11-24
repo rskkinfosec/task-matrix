@@ -1345,6 +1345,18 @@
                         hideAuthModal();
                     } else {
                         console.log('🔁 DOM ready: no user currently signed in');
+                        // iOS PWA recovery: check if there's a saved email from previous signin
+                        const savedEmail = getSavedUserEmail();
+                        if (savedEmail && (isIosDevice || isStandalonePWA)) {
+                            console.log('📧 iOS PWA recovery: found saved user email:', savedEmail);
+                            console.log('🔁 Retrying getRedirectResult to recover auth state...');
+                            firebase.auth().getRedirectResult().then((result) => {
+                                if (result && result.credential && result.credential.accessToken) {
+                                    console.log('✅ Recovered access token from getRedirectResult on DOM ready!');
+                                    persistAccessToken(result.credential.accessToken);
+                                }
+                            }).catch(err => console.warn('⚠️ Retry getRedirectResult failed:', err));
+                        }
                     }
                 } catch (err) {
                     console.warn('⚠️ DOM ready auth check failed:', err);
@@ -3106,6 +3118,19 @@
         // Request Google Drive access scope
         googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
         console.log('✅ Google Drive scope added');
+        
+        // Helper to persist user email for iOS PWA recovery
+        function persistUserEmail(email) {
+            if (email) {
+                try { localStorage.setItem('auth_user_email', email); } catch (e) { console.warn('⚠️ Failed to persist user email', e); }
+            } else {
+                try { localStorage.removeItem('auth_user_email'); } catch (e) {}
+            }
+        }
+        
+        function getSavedUserEmail() {
+            try { return localStorage.getItem('auth_user_email'); } catch (e) { return null; }
+        }
 
     // Decide which auth method to use
     // More robust iOS/iPadOS detection including iPadOS (Mac UA on iPad) and touch point check
@@ -3208,9 +3233,18 @@
             if (result && result.credential) {
                 console.log('✅ Redirect result received!');
                 persistAccessToken(result.credential.accessToken);
+                if (result.user) {
+                    persistUserEmail(result.user.email);
+                }
                 console.log('🔑 Got Google access token from redirect and persisted');
             } else {
                 console.log('ℹ️ No credential in redirect result');
+                // Check if there's a saved user email from a previous iOS PWA signin
+                const savedEmail = getSavedUserEmail();
+                if (savedEmail && !auth.currentUser) {
+                    console.log('📧 Found saved user email from previous signin:', savedEmail);
+                    console.log('🔁 iOS PWA: User may be signed in but auth not yet loaded. onAuthStateChanged will trigger.');
+                }
                 // Provide a hint for developers and users in iOS PWA context
                 if (isIosDevice && isStandalonePWA) {
                     console.warn('⚠️ iOS PWA detected: redirect results may not persist across installed PWA and Safari. Ask the user to use "Open in Browser" to sign in and return to the app.');
@@ -3243,6 +3277,39 @@
             return null;
         }
 
+        // iOS PWA special recovery: setTimeout to retry getRedirectResult a few times
+        // because on iOS PWA, the Firebase SDK might need extra time to initialize
+        if (isIosDevice || isStandalonePWA) {
+            const savedEmail = getSavedUserEmail();
+            if (savedEmail) {
+                console.log('📧 iOS PWA: Saved user email detected. Setting up recovery checks...');
+                // First retry after 1 second
+                setTimeout(() => {
+                    if (!auth.currentUser && !accessToken) {
+                        console.log('🔁 iOS PWA recovery (1s): Checking redirect result again...');
+                        firebase.auth().getRedirectResult().then((result) => {
+                            if (result && result.credential && result.credential.accessToken) {
+                                console.log('✅ iOS PWA recovery (1s): Got token!');
+                                persistAccessToken(result.credential.accessToken);
+                            }
+                        }).catch(err => console.warn('⚠️ iOS PWA recovery (1s) failed:', err));
+                    }
+                }, 1000);
+                // Second retry after 3 seconds
+                setTimeout(() => {
+                    if (!auth.currentUser && !accessToken) {
+                        console.log('🔁 iOS PWA recovery (3s): Checking redirect result again...');
+                        firebase.auth().getRedirectResult().then((result) => {
+                            if (result && result.credential && result.credential.accessToken) {
+                                console.log('✅ iOS PWA recovery (3s): Got token!');
+                                persistAccessToken(result.credential.accessToken);
+                            }
+                        }).catch(err => console.warn('⚠️ iOS PWA recovery (3s) failed:', err));
+                    }
+                }, 3000);
+            }
+        }
+
         // Authentication state observer
     auth.onAuthStateChanged((user) => {
             // Log state for debugging
@@ -3253,6 +3320,7 @@
                 try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {}
                 // User is signed in
                 currentUser = user;
+                persistUserEmail(user.email); // Persist email for iOS PWA recovery
                 console.log('✅ User signed in:', user.email);
                 // Mark in localStorage for cross-tab debugging
                 try { localStorage.setItem('auth_lastSignIn', Date.now().toString()); } catch (e) { console.warn('⚠️ Failed to write auth_lastSignIn', e); }
@@ -3298,6 +3366,7 @@
             } else {
                 // User is signed out
                 currentUser = null;
+                persistUserEmail(null); // Clear persisted email
                 clearPersistedAccessToken();
                 console.log('ℹ️ User signed out');
                 try { localStorage.setItem('auth_lastSignOut', Date.now().toString()); } catch (e) { console.warn('⚠️ Failed to write auth_lastSignOut', e); }
