@@ -3393,22 +3393,34 @@
                 
                 // Load tasks from Google Drive (if available)
                 setTimeout(() => {
-                    syncFromDrive().then(() => {
-                        // After Drive sync completes, refresh the UI
-                        try { renderTasks(); } catch (e) { console.warn('⚠️ renderTasks error after signin syncFromDrive', e); }
-                        try { renderTodayTasks(); } catch (e) { console.warn('⚠️ renderTodayTasks error after signin syncFromDrive', e); }
-                        // After loading from Drive, also upload current local tasks to Drive (sync happens regardless of task count)
-                        if (accessToken) {
-                            setTimeout(() => syncToDrive(), 500);
-                        }
+                    // Ensure we have the access token before trying to sync
+                    ensureOAuthAccessToken().then(() => {
+                        console.log('✅ ensureOAuthAccessToken check complete, token:', accessToken ? '✅ present' : '❌ null');
+                        syncFromDrive().then(() => {
+                            // After Drive sync completes, refresh the UI
+                            try { renderTasks(); } catch (e) { console.warn('⚠️ renderTasks error after signin syncFromDrive', e); }
+                            try { renderTodayTasks(); } catch (e) { console.warn('⚠️ renderTodayTasks error after signin syncFromDrive', e); }
+                            // After loading from Drive, also upload current local tasks to Drive (sync happens regardless of task count)
+                            if (accessToken) {
+                                setTimeout(() => syncToDrive(), 500);
+                            }
+                        });
                     });
                 }, 1000);
                 // If we have signed-in but don't have a Drive OAuth accessToken, encourage user to refresh Drive auth
-                if (!accessToken) {
-                    console.warn('⚠️ User signed in but no Drive access token available; prompt refresh');
-                    showSyncStatus('Signed in but Drive not authorized. Open Settings to refresh Drive authorization (or use Open in Browser).', 'error');
-                    setTimeout(hideSyncStatus, 5000);
-                }
+                // (check after a short delay to allow popup to complete)
+                setTimeout(() => {
+                    if (!accessToken) {
+                        console.warn('⚠️ User signed in but no Drive access token available; attempting auto-refresh');
+                        showSyncStatus('Signed in but Drive not authorized. Attempting to refresh Drive authorization...', 'error');
+                        setTimeout(() => {
+                            // Auto attempt reauthorization on desktop browsers
+                            if (!shouldUseRedirectForAuth) {
+                                refreshDriveAuthorization();
+                            }
+                        }, 2000);
+                    }
+                }, 500);
                 // Kick off a quick remote check for updates (and continue periodic checks)
                 setTimeout(() => checkRemoteBackupAndSync(), 2000);
                 // Remove persisted signin flag if it exists
