@@ -2,9 +2,9 @@ name: Test Suite
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 jobs:
   test:
@@ -45,6 +45,4 @@ jobs:
 
     - name: Report test status
       if: always()
-      run: |
-        echo "✅ Test run completed"
-        echo "Node version: ${{ matrix.node-version }}"
+      run: echo "Test run completed for Node ${{ matrix.node-version }}"
