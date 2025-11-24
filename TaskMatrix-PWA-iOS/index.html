@@ -3297,6 +3297,8 @@
         // Try to capture a Google OAuth access token if the user was redirected back to the app
         async function ensureOAuthAccessToken() {
             if (accessToken) return accessToken;
+            
+            // Try to get from redirect result
             try {
                 const result = await firebase.auth().getRedirectResult();
                 if (result && result.credential && result.credential.accessToken) {
@@ -3307,6 +3309,22 @@
             } catch (e) {
                 console.warn('⚠️ ensureOAuthAccessToken getRedirectResult error', e);
             }
+            
+            // If user is signed in but no token, try to get credential via reauthenticate
+            if (auth.currentUser) {
+                try {
+                    console.log('🔄 Current user exists but no token, attempting to get OAuth credential...');
+                    const result = await auth.currentUser.reauthenticateWithPopup(googleProvider);
+                    if (result && result.credential && result.credential.accessToken) {
+                        persistAccessToken(result.credential.accessToken);
+                        console.log('✅ Got accessToken from reauthenticate');
+                        return accessToken;
+                    }
+                } catch (e) {
+                    console.warn('⚠️ reauthenticateWithPopup failed, this is OK if user just signed in', e);
+                }
+            }
+            
             return null;
         }
 
@@ -3461,8 +3479,25 @@
                         // Popup resolved; ensure persistence is set and update flags
                         console.log('📘 signInWithPopup completed, result received');
                         console.log('✅ signInWithPopup returned:', result);
-                        const credential = result.credential;
+                        
+                        // Extract credential - try multiple approaches
+                        let credential = result.credential;
+                        if (!credential && result.user) {
+                            // On some browsers/versions, credential might be wrapped differently
+                            try {
+                                const cred = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+                                if (cred && cred.accessToken) {
+                                    credential = cred;
+                                    console.log('✅ Extracted credential via credentialFromResult');
+                                }
+                            } catch (e) {
+                                console.warn('⚠️ credentialFromResult failed:', e);
+                            }
+                        }
+                        
                         persistAccessToken(credential?.accessToken || null);
+                        console.log('🔑 Persisted access token:', accessToken ? '✅ present' : '❌ null');
+                        
                         // If popup returned but no credential (common in iOS PWA), gracefully fall back to redirect or show guidance
                         if (!result || !credential) {
                             console.warn('⚠️ signInWithPopup returned no credential; attempting redirect fallback (if applicable) or requesting browser sign-in');
@@ -3517,7 +3552,22 @@
                         try {
                             const popupResult = await auth.signInWithPopup(googleProvider);
                             console.log('✅ Popup fallback succeeded:', popupResult);
-                            persistAccessToken(popupResult.credential?.accessToken || null);
+                            
+                            // Extract credential same way as main flow
+                            let credential = popupResult.credential;
+                            if (!credential && popupResult.user) {
+                                try {
+                                    const cred = firebase.auth.GoogleAuthProvider.credentialFromResult(popupResult);
+                                    if (cred && cred.accessToken) {
+                                        credential = cred;
+                                        console.log('✅ Extracted credential from fallback popup');
+                                    }
+                                } catch (e) {
+                                    console.warn('⚠️ credentialFromResult in fallback failed:', e);
+                                }
+                            }
+                            
+                            persistAccessToken(credential?.accessToken || null);
                             hideAuthModal();
                             showSyncStatus('Signed in successfully!', 'success');
                             setTimeout(hideSyncStatus, 2000);
@@ -3576,8 +3626,24 @@
                         console.warn('⚠️ reauthenticateWithPopup failed, falling back to signInWithPopup', reauthErr);
                         result = await auth.signInWithPopup(googleProvider);
                     }
-                    const credential = result.credential;
-                        persistAccessToken(credential?.accessToken || null);
+                    
+                    // Extract credential with fallback extraction method
+                    let credential = result.credential;
+                    if (!credential && result.user) {
+                        try {
+                            const cred = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+                            if (cred && cred.accessToken) {
+                                credential = cred;
+                                console.log('✅ Extracted credential from refresh auth');
+                            }
+                        } catch (e) {
+                            console.warn('⚠️ credentialFromResult in refreshDriveAuthorization failed:', e);
+                        }
+                    }
+                    
+                    persistAccessToken(credential?.accessToken || null);
+                    console.log('🔑 Drive auth refreshed, token:', accessToken ? '✅ present' : '❌ null');
+                    
                     // Update UI to reflect new Drive authorization
                     updateSyncInfo(auth.currentUser || currentUser);
                     showSyncStatus('Drive authorization refreshed', 'success');
