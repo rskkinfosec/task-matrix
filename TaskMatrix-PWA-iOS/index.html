@@ -2457,6 +2457,24 @@
             const tabName = prompt('Enter new tab name:');
             if (tabName && tabName.trim()) {
                 const trimmedName = tabName.trim();
+                const normalizedInput = trimmedName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                
+                // Reserved names that map to default tabs
+                const reservedNames = {
+                    'family': 'home',
+                    'official': 'official', 
+                    'selfinterest': 'self',
+                    'home': 'home',
+                    'self': 'self',
+                    'today': 'today'
+                };
+                
+                // Check if trying to use a reserved name
+                if (reservedNames[normalizedInput]) {
+                    alert(`❌ "${trimmedName}" is a reserved tab name. Please choose a different name.`);
+                    return;
+                }
+                
                 // Check if tab with this name already exists
                 const exists = customTabs.some(t => t.name.toLowerCase() === trimmedName.toLowerCase());
                 if (exists) {
@@ -4161,10 +4179,21 @@
                     const data = XLSX.utils.sheet_to_json(worksheet);
                     const tabName = sheetName.toLowerCase().replace(/[^a-z0-9]/g, '');
                     
+                    // Map display names to default tab IDs
+                    const displayNameMap = {
+                        'family': 'home',
+                        'official': 'official',
+                        'selfinterest': 'self'
+                    };
+                    
                     // Determine tabId: use plain tab name for simplicity
                     let tabId;
                     if (['home', 'official', 'self'].includes(tabName)) {
                         tabId = tabName;
+                    } else if (displayNameMap[tabName]) {
+                        // Map display name to default tab ID
+                        tabId = displayNameMap[tabName];
+                        console.log(`📋 Mapped "${sheetName}" → default tab "${tabId}"`);
                     } else {
                         // Use tab name directly as ID - check if already exists first
                         const existingTab = customTabs.find(t => 
@@ -4385,6 +4414,20 @@
                         }
                     }
                 });
+
+                // Deduplicate customTabs before saving
+                const uniqueTabs = [];
+                const seenTabNames = new Set();
+                customTabs.forEach(tab => {
+                    const normalizedName = tab.name.toLowerCase().trim();
+                    if (!seenTabNames.has(normalizedName)) {
+                        seenTabNames.add(normalizedName);
+                        uniqueTabs.push(tab);
+                    } else {
+                        console.log(`🗑️ Removing duplicate tab: "${tab.name}"`);
+                    }
+                });
+                customTabs = uniqueTabs;
 
                 // Save merged result
                 saveTasks();
