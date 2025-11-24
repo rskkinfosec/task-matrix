@@ -28,23 +28,23 @@ jobs:
     - name: Check build artifacts
       shell: bash
       run: |
-        echo "✅ Build verification"
-        ls -la index.html
-        ls -la manifest.json
-        ls -la service-worker.js
-        echo "✅ All required files present"
+        echo "Build verification"
+        ls -la TaskMatrix-PWA-iOS/index.html
+        ls -la TaskMatrix-PWA-iOS/manifest.json
+        ls -la TaskMatrix-PWA-iOS/service-worker.js
+        echo "All required files present"
 
     - name: Deploy to GitHub Pages
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./
+        publish_dir: ./TaskMatrix-PWA-iOS
         exclude_assets: '.github,.gitignore,tests,*.md,*.txt'
         keep_files: true
 
     - name: Deployment Summary
       if: always()
       run: |
-        echo "📦 Deployment Status: ${{ job.status }}"
-        echo "🔗 Live at: https://rskkinfosec.github.io/TaskMatrix-PWA-iOS/"
+        echo "Deployment Status: ${{ job.status }}"
+        echo "Live at: https://rskkinfosec.github.io/TaskMatrix-PWA-iOS/"
