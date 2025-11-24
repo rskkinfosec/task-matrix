@@ -1,32 +1,50 @@
-name: Deploy to GitHub Pages (Disabled - Using Jekyll)
-
-# This workflow is disabled because GitHub's built-in Jekyll workflow
-# (pages-build-and-deployment) already handles deployment automatically
-# and works reliably. This custom workflow is kept as a backup.
+name: CI/CD Pipeline
 
 on:
-  workflow_dispatch:  # Manual trigger only
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  build-and-deploy:
+  # JOB 1: Run tests
+  test:
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup Node.js
+    - name: Setup Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
-        node-version: '20.x'
+        node-version: ${{ matrix.node-version }}
 
-    - name: Install test dependencies
+    - name: Install dependencies
       run: npm install
       working-directory: TaskMatrix-PWA-iOS/tests
 
-    - name: Run full test suite
-      run: npm run test:all
+    - name: Run test suite
+      run: npm test
       working-directory: TaskMatrix-PWA-iOS/tests
+
+    - name: Report test status
+      if: always()
+      run: echo "Test run completed for Node ${{ matrix.node-version }}"
+
+  # JOB 2: Deploy ONLY if tests pass
+  deploy:
+    needs: test  # This makes deploy wait for test to complete successfully
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'  # Only on main branch push
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
     - name: Check build artifacts
       shell: bash
@@ -38,7 +56,6 @@ jobs:
         echo "All required files present"
 
     - name: Deploy to GitHub Pages
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
