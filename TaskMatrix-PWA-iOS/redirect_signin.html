@@ -58,14 +58,6 @@
       if (result && result.user) {
         document.body.innerHTML = '<div style="padding:20px; text-align:center;">\n\n<p>Sign-in complete. You can close this tab and return to the TaskMatrix app.</p>\n\n</div>';
         try { localStorage.setItem('auth_open_in_browser', 'true'); } catch(e){}
-        // Attempt to write a `taskmatrix-pwa-signedin` string to clipboard to help the PWA detect sign-in on return
-        try {
-          if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText('taskmatrix-pwa-signedin').then(() => {
-              console.log('✅ Wrote PWA sign-in flag to clipboard');
-            }).catch(err => console.warn('⚠️ Could not write clipboard:', err));
-          }
-        } catch (e) { console.warn('⚠️ Clipboard write failed', e); }
       }
     }).catch(err => console.error('getRedirectResult redirectSignin callback', err));
   </script>

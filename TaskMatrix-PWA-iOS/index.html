@@ -1452,13 +1452,6 @@
                         // If still not signed in (no credential / no auth.currentUser) and we are in iOS PWA,
                         // try fallback to signInWithPopup (user initiated from click) as Safari redirect flows may not share session with installed PWA.
                         if (!auth.currentUser) {
-                            // Try reading clipboard for a PWA sign-in flag written by the system browser redirect helper
-                            try {
-                                const clipboardText = (navigator && navigator.clipboard && navigator.clipboard.readText) ? await navigator.clipboard.readText() : null;
-                                if (clipboardText && clipboardText.includes('taskmatrix-pwa-signedin')) {
-                                    console.log('🧾 Clipboard shows PWA sign-in hint; trying popup fallback to capture session');
-                                }
-                            } catch (clipErr) { console.warn('⚠️ Clipboard read failed:', clipErr); }
                             try {
                                 console.log('⏳ Manual completeSignIn: No current user detected after getRedirectResult. Trying signInWithPopup fallback.');
                                 const popupResult = await auth.signInWithPopup(googleProvider);
