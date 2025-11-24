@@ -1,0 +1,51 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+
+    - name: Install test dependencies
+      run: npm install
+      working-directory: ./tests
+
+    - name: Run full test suite
+      run: npm run test:all
+      working-directory: ./tests
+
+    - name: Check build artifacts
+      run: |
+        echo "✅ Build verification"
+        ls -la index.html
+        ls -la manifest.json
+        ls -la service-worker.js
+        echo "✅ All required files present"
+
+    - name: Deploy to GitHub Pages
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./
+        exclude_assets: '.github,.gitignore,tests,*.md,*.txt'
+        keep_files: true
+
+    - name: Deployment Summary
+      if: always()
+      run: |
+        echo "📦 Deployment Status: ${{ job.status }}"
+        echo "🔗 Live at: https://rskkinfosec.github.io/TaskMatrix-PWA-iOS/"
