@@ -28,6 +28,7 @@ jobs:
       working-directory: ./tests
 
     - name: Check build artifacts
+      shell: bash
       run: |
         echo "✅ Build verification"
         ls -la index.html

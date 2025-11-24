@@ -31,6 +31,9 @@ jobs:
       run: npm test
       working-directory: ./tests
 
+    - name: Create test results directory
+      run: mkdir -p ./tests/test-results/
+
     - name: Upload test results
       if: always()
       uses: actions/upload-artifact@v4
@@ -38,6 +41,7 @@ jobs:
         name: test-results-${{ matrix.node-version }}
         path: ./tests/test-results/
         retention-days: 30
+        if-no-files-found: ignore
 
     - name: Report test status
       if: always()
