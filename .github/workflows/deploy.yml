@@ -1,8 +1,11 @@
-name: Deploy to GitHub Pages
+name: Deploy to GitHub Pages (Disabled - Using Jekyll)
+
+# This workflow is disabled because GitHub's built-in Jekyll workflow
+# (pages-build-and-deployment) already handles deployment automatically
+# and works reliably. This custom workflow is kept as a backup.
 
 on:
-  push:
-    branches: [ main ]
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
   build-and-deploy:
