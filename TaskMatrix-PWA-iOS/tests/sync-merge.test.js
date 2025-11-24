@@ -240,7 +240,7 @@ function getTests() {
 
             const result = manager.mergeRemoteTasks([remote]);
 
-            assert.strictEqual(result.mergedCount, 0); // No new merge, just update
+            assert.strictEqual(result.mergedCount, 1); // Merged existing task (found by GUID)
             assert.strictEqual(manager.localTasks.length, 1); // No duplicate
             assert.strictEqual(manager.localTasks[0].title, 'Task Updated'); // Updated
         },
@@ -294,12 +294,13 @@ function getTests() {
         'Should handle conflict resolution: take newer version': () => {
             const manager = new SyncManager();
             const local = manager.addLocalTask({ title: 'Old Title' });
+            const oldUpdatedAt = local.updatedAt;
 
             const remote = {
                 guid: local.guid,
                 title: 'New Title',
                 description: '',
-                updatedAt: Date.now() // Newer
+                updatedAt: oldUpdatedAt + 1000 // Newer timestamp
             };
 
             // Merge would take newer

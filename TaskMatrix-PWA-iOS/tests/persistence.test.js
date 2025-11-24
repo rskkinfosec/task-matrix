@@ -242,15 +242,16 @@ function getTests() {
             const tasks = [{ id: 1, title: 'Task', guid: 'uuid-1' }];
             manager.saveTasks(tasks);
 
-            // Manually inject default tabs (shouldn't happen, but test detection)
+            // Directly inject default tabs into storage (bypassing the saveCustomTabs filter)
             const tabs = [
                 { id: 'home', name: 'Family' },
                 { id: 'Work', name: 'Work' }
             ];
-            manager.saveCustomTabs(tabs);
+            storage.setItem('customTabs', tabs);
 
             const result = manager.validateData();
 
+            // Should detect that validation failed due to default tab
             assert.strictEqual(result.valid, false);
             assert(result.errors.some(e => e.includes('home')));
         },
