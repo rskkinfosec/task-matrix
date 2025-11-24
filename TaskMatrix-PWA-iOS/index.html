@@ -1576,11 +1576,21 @@
         });
 
         function initTabs() {
-            // Add custom tabs
+            // Add custom tabs (deduplicate before rendering)
+            const uniqueTabs = [];
+            const seenNames = new Set();
+            customTabs.forEach(tab => {
+                const normalizedName = tab.name.toLowerCase().trim();
+                if (!seenNames.has(normalizedName)) {
+                    seenNames.add(normalizedName);
+                    uniqueTabs.push(tab);
+                }
+            });
+            
             const topTabsContainer = document.getElementById('topTabs');
             const addTabBtn = topTabsContainer.querySelector('.add-tab');
             
-            customTabs.forEach(tab => {
+            uniqueTabs.forEach(tab => {
                 const tabEl = document.createElement('div');
                 tabEl.className = 'top-tab';
                 tabEl.dataset.tab = tab.id;
@@ -2019,6 +2029,7 @@
                     task.important = important;
                     task.urgent = urgent;
                     task.updatedAt = now;
+                    task.syncState = 'Updated';
                     // Recompute canonical hash after editing so deduping remains valid
                     task.canonicalHash = generateTaskHash(task);
             // Re-enable submit
@@ -2052,6 +2063,7 @@
                     frequency: document.getElementById('taskFrequency').value,
                     completed: false,
                     createdAt: new Date().toISOString(),
+                    syncState: 'Added',
                     updatedAt: parsedUpdatedAt,
                     fieldUpdatedAt: parsedFieldUpdatedAt || {
                         title: now,
@@ -2286,9 +2298,10 @@
         }
 
         function saveTasks() {
-            // Ensure every task has a stable GUID and fieldUpdatedAt before saving
+            // Ensure every task has a stable GUID, fieldUpdatedAt, and syncState before saving
             tasks.forEach(t => {
                 if (!t.guid) t.guid = generateUUID();
+                if (!t.syncState) t.syncState = 'Added';
                 if (!t.fieldUpdatedAt) t.fieldUpdatedAt = {};
                 const now = Date.now();
                 const fields = ['title','description','quadrant','priority','estimateValue','estimateUnit','deadline','recurring','frequency','completed'];
@@ -4047,12 +4060,14 @@
                     // Convert tasks to worksheet data
             const wsData = [
                 ['Title', 'Description', 'Quadrant', 'Priority', 'Estimate Value', 'Estimate Unit', 
-                 'Deadline', 'Recurring', 'Frequency', 'Completed', 'Completed At', 'Deadline Missed', 'UpdatedAt', 'FieldUpdatedAt', 'CanonicalHash', 'GUID']
+                 'Deadline', 'Recurring', 'Frequency', 'Completed', 'Completed At', 'Deadline Missed', 'UpdatedAt', 'FieldUpdatedAt', 'CanonicalHash', 'GUID', 'SyncState']
                 ];
                     
                     tabTasks.forEach(t => {
                         if (!t.canonicalHash) t.canonicalHash = generateTaskHash(t);
                         if (!t.guid) t.guid = generateUUID();
+                        // Mark as SYNCED after uploading
+                        t.syncState = 'SYNCED';
                         wsData.push([
                             t.title || '',
                             t.description || '',
@@ -4069,7 +4084,8 @@
                             t.updatedAt ? new Date(t.updatedAt).toISOString() : '',
                             t.fieldUpdatedAt ? JSON.stringify(t.fieldUpdatedAt) : '',
                             t.canonicalHash || '',
-                            t.guid || ''
+                            t.guid || '',
+                            t.syncState || 'SYNCED'
                         ]);
                     });
                     
@@ -4197,7 +4213,8 @@
                             updatedAt: (getRowField(row, ['UpdatedAt', 'updatedAt']) ? Date.parse(getRowField(row, ['UpdatedAt', 'updatedAt'])) : Date.now()),
                             fieldUpdatedAt: (getRowField(row, ['FieldUpdatedAt', 'fieldUpdatedAt']) ? JSON.parse(getRowField(row, ['FieldUpdatedAt', 'fieldUpdatedAt'])) : null),
                             canonicalHash: String(getRowField(row, ['CanonicalHash', 'canonicalHash']) || null),
-                            guid: String(getRowField(row, ['GUID', 'Guid', 'Id', 'ID']) || null)
+                            guid: String(getRowField(row, ['GUID', 'Guid', 'Id', 'ID']) || null),
+                            syncState: String(getRowField(row, ['SyncState', 'syncState']) || 'SYNCED')
                         };
                         if (!t.canonicalHash) t.canonicalHash = generateTaskHash(t);
                         // Skip rows without a title to avoid importing empty tasks
