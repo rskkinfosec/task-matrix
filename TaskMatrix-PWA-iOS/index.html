@@ -3278,6 +3278,10 @@
                         // After Drive sync completes, refresh the UI
                         try { renderTasks(); } catch (e) { console.warn('⚠️ renderTasks error after signin syncFromDrive', e); }
                         try { renderTodayTasks(); } catch (e) { console.warn('⚠️ renderTodayTasks error after signin syncFromDrive', e); }
+                        // After loading from Drive, also upload current local tasks to Drive
+                        if (accessToken && tasks.length > 0) {
+                            setTimeout(() => syncToDrive(), 500);
+                        }
                     });
                 }, 1000);
                 // If we have signed-in but don't have a Drive OAuth accessToken, encourage user to refresh Drive auth
@@ -3378,18 +3382,35 @@
                     }
                 } catch (error) {
                     console.error('❌ Sign-in error:', error);
-                    showSyncStatus('Sign-in failed: ' + error.message, 'error');
-                    setTimeout(hideSyncStatus, 4000);
+                    console.error('❌ Error code:', error.code);
+                    console.error('❌ Error message:', error.message);
+                    
+                    // Determine if this is a popup blocked error
+                    const isPopupBlocked = error.code === 'auth/popup-blocked' || 
+                                          error.message?.includes('popup') || 
+                                          error.message?.includes('blocked');
+                    const isRedirectError = error.code === 'auth/redirect-cancelled-by-user' || 
+                                           error.code === 'auth/redirect-operation-pending';
+                    
+                    let errorMsg = 'Sign-in failed: ' + error.message;
+                    if (isPopupBlocked) {
+                        errorMsg = 'Popup blocked. Use "Open in Browser to Sign In" button instead.';
+                    } else if (isIosDevice && isStandalonePWA) {
+                        errorMsg = 'iOS PWA: Use "Open in Browser to Sign In" button for best results.';
+                    }
+                    
+                    showSyncStatus(errorMsg, 'error');
+                    setTimeout(hideSyncStatus, 5000);
 
                     // Attempt fallback strategy if primary failed
-                    if (!shouldUseRedirectForAuth) {
+                    if (!shouldUseRedirectForAuth && !isPopupBlocked) {
                         console.log('📤 Popup failed, trying redirect as fallback...');
                         try {
                             await auth.signInWithRedirect(googleProvider);
                         } catch (redirectError) {
                             console.error('❌ Redirect fallback also failed:', redirectError);
                         }
-                    } else {
+                    } else if (shouldUseRedirectForAuth && !isRedirectError) {
                         console.log('📤 Redirect failed, trying popup as fallback...');
                         try {
                             const popupResult = await auth.signInWithPopup(googleProvider);
@@ -3508,14 +3529,36 @@
                         console.log('🔁 User signed in via system browser - clearing flag');
                         localStorage.removeItem('auth_open_in_browser');
                         hideSyncStatus();
+                        // Trigger sync now that user is signed in
+                        setTimeout(() => syncFromDrive(), 500);
+                        setTimeout(() => { if (accessToken && tasks.length > 0) syncToDrive(); }, 1500);
                     } else {
-                        showSyncStatus('Returned from browser. Still not signed-in. If you completed sign-in in Safari, close the browser & return, or try signing in again from this app.', 'error');
-                        setTimeout(hideSyncStatus, 6000);
+                        // Try to get redirect result again - sometimes it takes multiple checks on iOS PWA
+                        console.log('🔁 focus: Trying getRedirectResult again for iOS Safari...');
+                        firebase.auth().getRedirectResult().then((result) => {
+                            if (result && result.credential && result.credential.accessToken) {
+                                console.log('✅ Got token from redirect on focus!');
+                                persistAccessToken(result.credential.accessToken);
+                                showSyncStatus('Sign-in detected. Completing...', 'success');
+                                setTimeout(hideSyncStatus, 1500);
+                                if (auth.currentUser) {
+                                    hideAuthModal();
+                                    setTimeout(() => syncFromDrive(), 500);
+                                }
+                            } else {
+                                showSyncStatus('Returned from browser. Still not signed-in. If you completed sign-in in Safari, close the browser & return, or try signing in again from this app.', 'error');
+                                setTimeout(hideSyncStatus, 6000);
+                            }
+                        }).catch(err => {
+                            console.warn('⚠️ getRedirectResult failed on focus:', err);
+                            showSyncStatus('Returned from browser. Still not signed-in. Try signing in again.', 'error');
+                            setTimeout(hideSyncStatus, 6000);
+                        });
                     }
                 }
             } catch (e) { /* ignore */ }
             // Re-run redirect check for OAuth access token (use helper) if user returns from browser (iOS PWA case)
-            if (!auth.currentUser) {
+            if (!auth.currentUser && !localStorage.getItem('auth_open_in_browser')) {
                 console.log('🔁 focus: ensureOAuthAccessToken (focus)');
                 ensureOAuthAccessToken().then(tok => {
                     if (tok) {
