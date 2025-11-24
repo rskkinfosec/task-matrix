@@ -2229,6 +2229,15 @@
                 if (!t.updatedAt) t.updatedAt = now;
             });
             localStorage.setItem('tasks_v2', JSON.stringify(tasks));
+            
+            // Auto-sync to Drive after task changes (debounced to avoid excessive uploads)
+            if (currentUser && accessToken) {
+                if (autoSyncTimeout) clearTimeout(autoSyncTimeout);
+                autoSyncTimeout = setTimeout(() => {
+                    console.log('⏱️ Auto-syncing tasks to Drive after changes...');
+                    syncToDrive().catch(err => console.warn('⚠️ Auto-sync failed:', err));
+                }, AUTO_SYNC_DELAY_MS);
+            }
         }
 
         // Generate a canonical hash to identify a task across imports/backups
@@ -2358,6 +2367,15 @@
 
         function saveCustomTabs() {
             localStorage.setItem('customTabs', JSON.stringify(customTabs));
+            
+            // Auto-sync to Drive after tab changes (debounced)
+            if (currentUser && accessToken) {
+                if (autoSyncTimeout) clearTimeout(autoSyncTimeout);
+                autoSyncTimeout = setTimeout(() => {
+                    console.log('⏱️ Auto-syncing custom tabs to Drive after changes...');
+                    syncToDrive().catch(err => console.warn('⚠️ Auto-sync failed:', err));
+                }, AUTO_SYNC_DELAY_MS);
+            }
         }
 
         function addNewTab() {
@@ -3184,6 +3202,9 @@
     let signInInProgress = false;
     // Track if we've shown backup restore prompt for a given backup file
     let driveBackupPromptInProgress = false;
+    // Debounce timer for auto-sync after task changes
+    let autoSyncTimeout = null;
+    const AUTO_SYNC_DELAY_MS = 3000; // Wait 3 seconds after last change before syncing
         const DRIVE_FILE_NAME = 'taskmatrix-backup.xlsx';
 
     // NOTE: GSI variables removed. We use Firebase's popup/redirect flows only.
