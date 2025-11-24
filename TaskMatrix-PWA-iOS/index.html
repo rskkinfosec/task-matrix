@@ -1309,66 +1309,47 @@
         let tasks = JSON.parse(localStorage.getItem('tasks_v2')) || [];
         let customTabs = JSON.parse(localStorage.getItem('customTabs')) || [];
         
-        // Ensure default tabs are always in customTabs (needed for proper sync matching)
-        const defaultTabIds = { 'home': '👨‍👩‍👧‍👦 Family', 'official': '💼 Official', 'self': '🌟 Self Interest' };
-        Object.keys(defaultTabIds).forEach(tabId => {
-            if (!customTabs.find(t => t.id === tabId)) {
-                customTabs.push({ id: tabId, name: defaultTabIds[tabId] });
-                console.log(`📌 Added default tab "${defaultTabIds[tabId]}" (ID: ${tabId})`);
+        // IMPORTANT: Default tabs (home, official, self) are NEVER stored in customTabs
+        // This prevents sync from creating duplicates
+        // Filter out any default tab IDs that might be in customTabs (old data)
+        const DEFAULT_TAB_IDS = new Set(['home', 'official', 'self']);
+        const DISPLAY_NAME_MAP = { 'family': 'home', 'official': 'official', 'selfinterest': 'self' };
+        
+        customTabs = customTabs.filter(tab => {
+            // Remove if it's a default tab ID
+            if (DEFAULT_TAB_IDS.has(tab.id)) {
+                console.log(`🗑️ [INIT] Removed default tab from customTabs: "${tab.name}" (ID: ${tab.id})`);
+                return false;
             }
+            // Remove if normalized name maps to default tab
+            const normalized = tab.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (DISPLAY_NAME_MAP[normalized]) {
+                console.log(`🗑️ [INIT] Removed display-name duplicate from customTabs: "${tab.name}" (maps to default)`);
+                return false;
+            }
+            return true;
         });
-        localStorage.setItem('customTabs', JSON.stringify(customTabs));
         
-        // Deduplicate custom tabs on load (remove tabs with same name, keep first occurrence)
-        // Now that tabs use name as ID, deduplication is simpler
-        const deduplicatedTabs = [];
-        const seenNames = new Set();
-        const defaultTabIds = ['home', 'official', 'self'];
-        
-        customTabs.forEach(tab => {
+        // Deduplicate remaining custom tabs by name
+        const seen = new Set();
+        const deduplicatedTabs = customTabs.filter(tab => {
             const normalizedName = tab.name.toLowerCase().trim();
-            
-            // Skip duplicate default tabs (keep only one per default ID)
-            if (defaultTabIds.includes(tab.id)) {
-                if (seenNames.has(tab.id)) {
-                    console.log(`🗑️ Removing duplicate default tab: "${tab.name}" (ID: ${tab.id})`);
-                    return;
-                }
-                seenNames.add(tab.id);
-                deduplicatedTabs.push(tab);
-                return;
+            if (seen.has(normalizedName)) {
+                console.log(`🗑️ [INIT] Removed duplicate custom tab: "${tab.name}"`);
+                return false;
             }
-            
-            if (!seenNames.has(normalizedName)) {
-                seenNames.add(normalizedName);
-                // Ensure ID matches name (migrate old timestamp-based IDs)
-                if (tab.id !== tab.name) {
-                    console.log(`🔄 Migrating tab "${tab.name}" from ID ${tab.id} to ${tab.name}`);
-                    // Update tasks that use old ID
-                    let tasks = JSON.parse(localStorage.getItem('tasks_v2')) || [];
-                    let updated = false;
-                    tasks.forEach(task => {
-                        if (task.parentTab === tab.id) {
-                            task.parentTab = tab.name;
-                            updated = true;
-                        }
-                    });
-                    if (updated) {
-                        localStorage.setItem('tasks_v2', JSON.stringify(tasks));
-                    }
-                    tab.id = tab.name;
-                }
-                deduplicatedTabs.push(tab);
-            } else {
-                console.log(`🗑️ Removing duplicate tab: "${tab.name}" (ID: ${tab.id})`);
+            seen.add(normalizedName);
+            // Ensure ID matches name for custom tabs
+            if (tab.id !== tab.name) {
+                console.log(`🔄 [INIT] Migrating custom tab "${tab.name}" ID from ${tab.id} to ${tab.name}`);
+                tab.id = tab.name;
             }
+            return true;
         });
         
-        if (deduplicatedTabs.length !== customTabs.length) {
-            customTabs = deduplicatedTabs;
-            localStorage.setItem('customTabs', JSON.stringify(customTabs));
-            console.log(`✅ Cleaned up ${customTabs.length} unique tabs (removed ${customTabs.length - deduplicatedTabs.length} duplicates)`);
-        }
+        customTabs = deduplicatedTabs;
+        localStorage.setItem('customTabs', JSON.stringify(customTabs));
+        console.log(`✅ [INIT] Loaded ${customTabs.length} custom tabs (default tabs: home, official, self are separate)`);
         
         let currentParentTab = 'today';
         let currentSubTab = 'active';
@@ -4441,47 +4422,41 @@
                     }
                 });
 
-                // Deduplicate customTabs before saving and remove any that duplicate default tabs
-                const defaultTabIds = ['home', 'official', 'self'];
-                const reverseDisplayNameMap = {
-                    'family': ['home', 'family'],
-                    'official': ['official'],
-                    'selfinterest': ['self', 'selfinterest']
-                };
+                // Deduplicate customTabs before saving
+                // Only keep truly custom tabs, filter out any that are default tabs or duplicates
+                const DEFAULT_TAB_IDS = new Set(['home', 'official', 'self']);
+                const DISPLAY_NAME_MAP = { 'family': 'home', 'official': 'official', 'selfinterest': 'self' };
                 
                 const uniqueTabs = [];
-                const seenTabNames = new Set();
+                const seenNames = new Set();
+                
                 customTabs.forEach(tab => {
-                    const normalizedName = tab.name.toLowerCase().trim();
-                    const normalizedId = tab.id.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    
-                    // Check if this tab's ID is a default tab ID
-                    if (defaultTabIds.includes(tab.id)) {
-                        console.log(`🗑️ Skipping default tab: "${tab.name}" (ID: ${tab.id})`);
-                        // Keep it, but only one copy per default ID
-                        if (!seenTabNames.has(normalizedName)) {
-                            seenTabNames.add(normalizedName);
-                            uniqueTabs.push(tab);
-                        }
+                    // Double-check: never sync default tabs into customTabs
+                    if (DEFAULT_TAB_IDS.has(tab.id)) {
+                        console.log(`🗑️ [SYNC] Removed default tab from customTabs: "${tab.name}" (ID: ${tab.id})`);
                         return;
                     }
                     
-                    // Check if normalized name/ID maps to a default tab
-                    for (let [displayName, defaultIds] of Object.entries(reverseDisplayNameMap)) {
-                        if (defaultIds.includes(normalizedId)) {
-                            console.log(`🗑️ Removing duplicate of default tab: "${tab.name}" (normalized ID: ${normalizedId} maps to default)`);
-                            return; // Skip this custom tab
-                        }
+                    // Check if normalized name maps to a default tab
+                    const normalized = tab.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (DISPLAY_NAME_MAP[normalized]) {
+                        console.log(`🗑️ [SYNC] Removed display-name duplicate: "${tab.name}" (maps to default tab)`);
+                        return;
                     }
                     
-                    if (!seenTabNames.has(normalizedName)) {
-                        seenTabNames.add(normalizedName);
+                    const normalizedName = tab.name.toLowerCase().trim();
+                    if (!seenNames.has(normalizedName)) {
+                        seenNames.add(normalizedName);
                         uniqueTabs.push(tab);
                     } else {
-                        console.log(`🗑️ Removing duplicate tab: "${tab.name}"`);
+                        console.log(`🗑️ [SYNC] Removed duplicate custom tab: "${tab.name}"`);
                     }
                 });
-                customTabs = uniqueTabs;
+                
+                if (uniqueTabs.length !== customTabs.length) {
+                    console.log(`✅ [SYNC] Deduplicated customTabs: ${customTabs.length} → ${uniqueTabs.length}`);
+                    customTabs = uniqueTabs;
+                }
 
                 // Save merged result
                 saveTasks();
