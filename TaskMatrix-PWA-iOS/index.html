@@ -952,7 +952,7 @@
             <div style="height:12px"></div>
             <button type="button" class="auth-btn" id="openInBrowserSignin" style="background:#fff;color:#333;border:2px dashed #ddd;margin-top:8px;">Open in Browser to Sign In (Safari)</button>
             <div style="height:8px"></div>
-            <div id="iosPwaSigninNotice" style="font-size:12px;color:#b91c1c;display:none;margin-top:6px;">iOS installed PWA notices: Google Sign-In may not persist in this app. Please use "Open in Browser" and then return to the PWA and press "Complete Sign-In".</div>
+            <div id="iosPwaSigninNotice" style="font-size:12px;color:#b91c1c;display:none;margin-top:6px;line-height:1.5;"><strong>iOS PWA Users:</strong> Use the two-step process below:<br>1️⃣ Click "Open in Browser" → Sign in with Google<br>2️⃣ Return here → Click "Complete Sign-In"</div>
             <button type="button" class="auth-btn" id="completeSignInBtn" style="background:#f3f4f6;color:#333;border:2px solid #ddd;margin-top:8px;">Complete Sign-In</button>
             
             <div class="auth-divider">OR</div>
@@ -1496,57 +1496,38 @@
                     e.preventDefault();
                     e.stopPropagation();
                     
-                    // Disable button to prevent double-clicks
                     completeSigninBtn.disabled = true;
                     completeSigninBtn.textContent = 'Checking...';
                     
                     showSyncStatus('Checking sign-in result...', 'syncing');
                     try {
+                        // Capture OAuth access token from redirect result
                         const token = await ensureOAuthAccessToken();
-                        if (token) {
-                            console.log('🔁 Complete Sign-In detected token via ensureOAuthAccessToken');
-                            showSyncStatus('Sign-in detected. Completing...', 'success');
-                            persistAccessToken(token);
+                        
+                        if (token && auth.currentUser) {
+                            console.log('✅ Complete Sign-In: Found token and user');
+                            showSyncStatus('Sign-in complete!', 'success');
                             hideAuthModal();
-                            // Pull remote tasks now that we have token & (likely) user
-                            setTimeout(() => { if (accessToken && auth.currentUser) syncFromDrive(); }, 300);
-                            // Start a sync now that we have a token
-                            setTimeout(() => { if (currentUser && accessToken) syncToDrive(); }, 200);
+                            
+                            // Sync tasks now that we have token & user
+                            setTimeout(() => { 
+                                if (accessToken && auth.currentUser) {
+                                    syncFromDrive();
+                                    syncToDrive();
+                                }
+                            }, 300);
                             setTimeout(hideSyncStatus, 1500);
+                        } else if (auth.currentUser && !token) {
+                            console.log('⚠️ User signed in but no Drive token');
+                            showSyncStatus('Signed in but no Drive access. Use "Refresh Drive Authorization" in settings.', 'error');
+                            hideAuthModal();
+                            setTimeout(hideSyncStatus, 4000);
                         } else {
-                            // If not found, try getRedirectResult manually as a second attempt
-                            const result = await firebase.auth().getRedirectResult();
-                            console.log('📋 getRedirectResult returned (manual):', result);
-                            if (result && result.credential) {
-                                const credential = result.credential;
-                                persistAccessToken(credential.accessToken || null);
-                                console.log('🔑 Got Google access token from redirect (manual)');
-                                hideAuthModal();
-                                showSyncStatus('Sign-in detected. Completing...', 'success');
-                                setTimeout(() => { if (currentUser && accessToken) syncToDrive(); }, 200);
-                                // Also pull tasks from remote since this was a redirect-based sign-in
-                                setTimeout(() => { if (currentUser && accessToken) syncFromDrive(); }, 400);
-                                setTimeout(hideSyncStatus, 1500);
-                            } else {
-                                console.log('ℹ️ No credential found via getRedirectResult (manual)');
-                                setTimeout(hideSyncStatus, 2000);
-                            }
+                            console.log('ℹ️ No sign-in detected. User may need to complete sign-in in browser first.');
+                            showSyncStatus('No sign-in detected. Please use "Open in Browser" first.', 'error');
+                            setTimeout(hideSyncStatus, 3000);
                         }
-                        // If still not signed in (no credential / no auth.currentUser) and we are in iOS PWA,
-                        // try fallback to signInWithRedirect (user initiated from click) - no popup windows
-                        if (!auth.currentUser) {
-                            try {
-                                console.log('⏳ Manual completeSignIn: No current user detected after getRedirectResult. Trying signInWithRedirect fallback.');
-                                await auth.signInWithRedirect(googleProvider);
-                                console.log('✅ Redirect initiated (manual completeSignIn) - page will reload');
-                                // Note: page will reload after redirect, so no need to call hideAuthModal() here
-                                return;
-                            } catch (redirectErr) {
-                                console.warn('⚠️ Redirect fallback failed (manual completeSignIn):', redirectErr);
-                                showSyncStatus('Sign-in redirect failed: ' + (redirectErr.message || ''), 'error');
-                                setTimeout(hideSyncStatus, 5000);
-                            }
-                        }
+                        
                         // Reset button state
                         setTimeout(() => { 
                             completeSigninBtn.disabled = false;
@@ -1555,7 +1536,7 @@
                             try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {}
                         }, 800);
                     } catch (error) {
-                        console.error('❌ getRedirectResult error (manual)', error);
+                        console.error('❌ Complete Sign-In error:', error);
                         showSyncStatus('Sign-in check failed: ' + (error.message || ''), 'error');
                         setTimeout(() => {
                             completeSigninBtn.disabled = false;
@@ -3420,19 +3401,17 @@
                 console.warn('⚠️ ensureOAuthAccessToken getRedirectResult error', e);
             }
             
-            // If user is signed in but no token, try to get credential via reauthenticate
-            if (auth.currentUser) {
-                try {
-                    console.log('🔄 Current user exists but no token, attempting to get OAuth credential...');
-                    const result = await auth.currentUser.reauthenticateWithPopup(googleProvider);
-                    if (result && result.credential && result.credential.accessToken) {
-                        persistAccessToken(result.credential.accessToken);
-                        console.log('✅ Got accessToken from reauthenticate');
-                        return accessToken;
-                    }
-                } catch (e) {
-                    console.warn('⚠️ reauthenticateWithPopup failed, this is OK if user just signed in', e);
+            // Try reading from localStorage in case it was persisted earlier
+            try {
+                const savedDriveToken = localStorage.getItem('drive_access_token');
+                const savedDriveTokenExpiry = parseInt(localStorage.getItem('drive_access_token_expiry') || '0');
+                if (savedDriveToken && savedDriveTokenExpiry && Date.now() < savedDriveTokenExpiry) {
+                    accessToken = savedDriveToken;
+                    console.log('🔁 ensureOAuthAccessToken: Loaded token from localStorage');
+                    return accessToken;
                 }
+            } catch (e) {
+                console.warn('⚠️ ensureOAuthAccessToken localStorage read error', e);
             }
             
             return null;
@@ -3624,153 +3603,90 @@
                 e.preventDefault();
                 e.stopPropagation();
                 
+                // iOS PWA: Direct users to use the dedicated two-step flow
+                if (isIosDevice && isStandalonePWA) {
+                    console.log('ℹ️ iOS PWA detected - directing to two-step auth flow');
+                    showSyncStatus('For iOS PWA: Use "Open in Browser" button below', 'error');
+                    setTimeout(hideSyncStatus, 4000);
+                    return;
+                }
+                
                 try {
                         // Mark sign-in as started to prevent modal re-show and race conditions
                         signInInProgress = true;
                     showSyncStatus('Signing in with Google...', 'syncing');
 
-                    // Recompute decision at time of click in case environment changed (e.g., PWA install state)
-                    const useRedirectNow = (isIosDevice || isStandalonePWA);
-                    if (useRedirectNow) {
-                        console.log('📤 Using signInWithRedirect (iOS / installed PWA)');
-                        try {
-                            // persist a flag to indicate redirect started (so we don't re-show modal on reload)
-                            localStorage.setItem('auth_signin_started', Date.now().toString());
-                        } catch (e) {}
-                        await auth.signInWithRedirect(googleProvider);
-                        // Control never reaches here because page navigates away
-                    } else {
-                        console.log('📤 Using signInWithPopup (desktop/browser)');
-                        const result = await auth.signInWithPopup(googleProvider);
-                        // Popup resolved; ensure persistence is set and update flags
-                        console.log('📘 signInWithPopup completed, result received');
-                        console.log('✅ signInWithPopup returned:', result);
-                        
-                        // Force re-enable LOCAL persistence after popup completes (Safari issue workaround)
-                        try {
-                            await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-                            console.log('🔒 Re-enabled LOCAL persistence after popup');
-                        } catch (persistErr) {
-                            console.warn('⚠️ Failed to re-set persistence after popup:', persistErr);
-                        }
-                        
-                        // Extract credential - try multiple approaches
-                        let credential = result.credential;
-                        if (!credential && result.user) {
-                            // On some browsers/versions, credential might be wrapped differently
-                            try {
-                                const cred = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
-                                if (cred && cred.accessToken) {
-                                    credential = cred;
-                                    console.log('✅ Extracted credential via credentialFromResult');
-                                }
-                            } catch (e) {
-                                console.warn('⚠️ credentialFromResult failed:', e);
-                            }
-                        }
-                        
-                        persistAccessToken(credential?.accessToken || null);
-                        console.log('🔑 Persisted access token:', accessToken ? '✅ present' : '❌ null');
-                        
-                        // Force current user update
-                        if (result.user) {
-                            currentUser = result.user;
-                            console.log('✅ Manually set currentUser from popup result:', result.user.email);
-                        }
-                        
-                        // If popup returned but no credential (common in iOS PWA), gracefully fall back to redirect or show guidance
-                        if (!result || !credential) {
-                            console.warn('⚠️ signInWithPopup returned no credential; attempting redirect fallback (if applicable) or requesting browser sign-in');
-                            if (isIosDevice || isStandalonePWA) {
-                                try {
-                                    localStorage.setItem('auth_signin_started', Date.now().toString());
-                                } catch (e) {}
-                                // Redirect fallback will navigate away; user should return and press 'Complete Sign-In' if needed
-                                await auth.signInWithRedirect(googleProvider);
-                                return; // will navigate away
-                            } else {
-                                showSyncStatus('Popup did not return credentials; please try again or use browser sign-in.', 'error');
-                                setTimeout(hideSyncStatus, 4000);
-                            }
-                        }
-                        hideAuthModal();
-                        showSyncStatus('Signed in successfully!', 'success');
-                        setTimeout(hideSyncStatus, 2000);
-                        // Trigger immediate sync after sign-in completes
-                        // Use shorter delays to account for Safari timing
-                        setTimeout(() => {
-                            console.log('🔄 Post-popup auth check - currentUser:', currentUser?.email, 'auth.currentUser:', auth.currentUser?.email, 'accessToken:', accessToken ? 'present' : 'null');
-                            if (auth.currentUser) {
-                                currentUser = auth.currentUser;
-                                displayUserProfile(auth.currentUser);
-                            }
-                            if ((currentUser || auth.currentUser) && accessToken) {
-                                console.log('🔄 Triggering post-signin sync...');
-                                syncFromDrive();
-                            } else if (auth.currentUser) {
-                                console.log('⚠️ User authenticated but no accessToken, attempting Drive auth refresh...');
-                                refreshDriveAuthorization();
-                            }
-                        }, 300);
+                    // Desktop/Browser: Use popup flow only
+                    console.log('📤 Using signInWithPopup (desktop/browser)');
+                    const result = await auth.signInWithPopup(googleProvider);
+                    console.log('✅ signInWithPopup returned:', result);
+                    
+                    // Force re-enable LOCAL persistence after popup completes (Safari issue workaround)
+                    try {
+                        await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+                        console.log('🔒 Re-enabled LOCAL persistence after popup');
+                    } catch (persistErr) {
+                        console.warn('⚠️ Failed to re-set persistence after popup:', persistErr);
                     }
+                    
+                    // Extract credential - try multiple approaches
+                    let credential = result.credential;
+                    if (!credential && result.user) {
+                        try {
+                            const cred = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+                            if (cred && cred.accessToken) {
+                                credential = cred;
+                                console.log('✅ Extracted credential via credentialFromResult');
+                            }
+                        } catch (e) {
+                            console.warn('⚠️ credentialFromResult failed:', e);
+                        }
+                    }
+                    
+                    persistAccessToken(credential?.accessToken || null);
+                    console.log('🔑 Persisted access token:', accessToken ? '✅ present' : '❌ null');
+                    
+                    // Force current user update
+                    if (result.user) {
+                        currentUser = result.user;
+                        console.log('✅ Manually set currentUser from popup result:', result.user.email);
+                    }
+                    
+                    hideAuthModal();
+                    showSyncStatus('Signed in successfully!', 'success');
+                    setTimeout(hideSyncStatus, 2000);
+                    
+                    // Trigger immediate sync after sign-in completes
+                    setTimeout(() => {
+                        console.log('🔄 Post-popup auth check - currentUser:', currentUser?.email, 'auth.currentUser:', auth.currentUser?.email, 'accessToken:', accessToken ? 'present' : 'null');
+                        if (auth.currentUser) {
+                            currentUser = auth.currentUser;
+                            displayUserProfile(auth.currentUser);
+                        }
+                        if ((currentUser || auth.currentUser) && accessToken) {
+                            console.log('🔄 Triggering post-signin sync...');
+                            syncFromDrive();
+                        } else if (auth.currentUser) {
+                            console.log('⚠️ User authenticated but no accessToken, attempting Drive auth refresh...');
+                            refreshDriveAuthorization();
+                        }
+                    }, 300);
                 } catch (error) {
                     console.error('❌ Sign-in error:', error);
                     console.error('❌ Error code:', error.code);
                     console.error('❌ Error message:', error.message);
                     
-                    // Determine if this is a popup blocked error
                     const isPopupBlocked = error.code === 'auth/popup-blocked' || 
                                           error.message?.includes('popup') || 
                                           error.message?.includes('blocked');
-                    const isRedirectError = error.code === 'auth/redirect-cancelled-by-user' || 
-                                           error.code === 'auth/redirect-operation-pending';
                     
                     let errorMsg = 'Sign-in failed: ' + error.message;
                     if (isPopupBlocked) {
-                        errorMsg = 'Popup blocked. Use "Open in Browser to Sign In" button instead.';
-                    } else if (isIosDevice && isStandalonePWA) {
-                        errorMsg = 'iOS PWA: Use "Open in Browser to Sign In" button for best results.';
+                        errorMsg = 'Popup blocked. Please allow popups for this site or try again.';
                     }
                     
                     showSyncStatus(errorMsg, 'error');
                     setTimeout(hideSyncStatus, 5000);
-
-                    // Attempt fallback strategy if primary failed
-                    if (!shouldUseRedirectForAuth && !isPopupBlocked) {
-                        console.log('📤 Popup failed, trying redirect as fallback...');
-                        try {
-                            await auth.signInWithRedirect(googleProvider);
-                        } catch (redirectError) {
-                            console.error('❌ Redirect fallback also failed:', redirectError);
-                        }
-                    } else if (shouldUseRedirectForAuth && !isRedirectError) {
-                        console.log('📤 Redirect failed, trying popup as fallback...');
-                        try {
-                            const popupResult = await auth.signInWithPopup(googleProvider);
-                            console.log('✅ Popup fallback succeeded:', popupResult);
-                            
-                            // Extract credential same way as main flow
-                            let credential = popupResult.credential;
-                            if (!credential && popupResult.user) {
-                                try {
-                                    const cred = firebase.auth.GoogleAuthProvider.credentialFromResult(popupResult);
-                                    if (cred && cred.accessToken) {
-                                        credential = cred;
-                                        console.log('✅ Extracted credential from fallback popup');
-                                    }
-                                } catch (e) {
-                                    console.warn('⚠️ credentialFromResult in fallback failed:', e);
-                                }
-                            }
-                            
-                            persistAccessToken(credential?.accessToken || null);
-                            hideAuthModal();
-                            showSyncStatus('Signed in successfully!', 'success');
-                            setTimeout(hideSyncStatus, 2000);
-                        } catch (popupFallbackError) {
-                            console.error('❌ Popup fallback failed as well:', popupFallbackError);
-                        }
-                    }
                 } finally {
                     // Sign-in attempt finished; reset flag after a small delay
                     setTimeout(() => {
