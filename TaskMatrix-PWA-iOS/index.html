@@ -1471,7 +1471,121 @@
             document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
             document.getElementById('clearTabBtn').addEventListener('click', clearTabTasks);
             
-            // Removed openInBrowserBtn and completeSignInBtn - using direct Firebase redirect in PWA
+            // Google Sign-In button
+            const googleSignInBtn = document.getElementById('googleSignInBtn');
+            if (googleSignInBtn) {
+                googleSignInBtn.addEventListener('click', async (e) => {
+                    console.log('🖱️ Google Sign-In button clicked');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    // iOS PWA: Use redirect flow instead of popup
+                    if (isIosDevice && isStandalonePWA) {
+                        console.log('ℹ️ iOS PWA detected - using redirect flow');
+                        try {
+                            signInInProgress = true;
+                            showSyncStatus('Redirecting to Google sign-in...', 'syncing');
+                            localStorage.setItem('auth_signin_started', Date.now().toString());
+                            await auth.signInWithRedirect(googleProvider);
+                            // Browser will navigate away; code after this won't execute
+                        } catch (error) {
+                            console.error('❌ Redirect sign-in error:', error);
+                            showSyncStatus('Sign-in failed: ' + error.message, 'error');
+                            signInInProgress = false;
+                            setTimeout(hideSyncStatus, 4000);
+                        }
+                        return;
+                    }
+                    
+                    // Desktop/Safari iOS: Use popup flow
+                    try {
+                        signInInProgress = true;
+                        showSyncStatus('Signing in with Google...', 'syncing');
+                        
+                        const result = await auth.signInWithPopup(googleProvider);
+                        console.log('✅ signInWithPopup returned:', result);
+                        
+                        // Force re-enable LOCAL persistence after popup
+                        try {
+                            await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+                            console.log('🔒 Re-enabled LOCAL persistence after popup');
+                        } catch (persistErr) {
+                            console.warn('⚠️ Failed to re-set persistence after popup:', persistErr);
+                        }
+                        
+                        // Extract credential
+                        let credential = result.credential;
+                        if (!credential && result.user) {
+                            try {
+                                const cred = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+                                if (cred && cred.accessToken) {
+                                    credential = cred;
+                                    console.log('✅ Extracted credential via credentialFromResult');
+                                }
+                            } catch (e) {
+                                console.warn('⚠️ credentialFromResult failed:', e);
+                            }
+                        }
+                        
+                        persistAccessToken(credential?.accessToken || null);
+                        console.log('🔑 Persisted access token:', accessToken ? '✅ present' : '❌ null');
+                        
+                        if (result.user) {
+                            currentUser = result.user;
+                            console.log('✅ Set currentUser from popup result:', result.user.email);
+                        }
+                        
+                        hideAuthModal();
+                        showSyncStatus('Signed in successfully!', 'success');
+                        setTimeout(hideSyncStatus, 2000);
+                        
+                        // Trigger sync after sign-in
+                        setTimeout(() => {
+                            if (auth.currentUser) {
+                                currentUser = auth.currentUser;
+                                displayUserProfile(auth.currentUser);
+                            }
+                            if ((currentUser || auth.currentUser) && accessToken) {
+                                console.log('🔄 Triggering post-signin sync...');
+                                syncFromDrive();
+                            }
+                        }, 300);
+                    } catch (error) {
+                        console.error('❌ Sign-in error:', error);
+                        
+                        const isPopupBlocked = error.code === 'auth/popup-blocked' || 
+                                              error.message?.includes('popup') || 
+                                              error.message?.includes('blocked');
+                        
+                        let errorMsg = 'Sign-in failed: ' + error.message;
+                        if (isPopupBlocked) {
+                            errorMsg = 'Popup blocked. Please allow popups for this site.';
+                        }
+                        
+                        showSyncStatus(errorMsg, 'error');
+                        setTimeout(hideSyncStatus, 5000);
+                    } finally {
+                        setTimeout(() => {
+                            signInInProgress = false;
+                            try { localStorage.removeItem('auth_signin_started'); } catch (e) {}
+                        }, 500);
+                    }
+                });
+                console.log('✅ Google Sign-In button listener added');
+            } else {
+                console.error('❌ Google Sign-In button not found');
+            }
+            
+            // Offline button
+            const offlineBtn = document.getElementById('offlineBtn');
+            if (offlineBtn) {
+                offlineBtn.addEventListener('click', () => {
+                    localStorage.setItem('offlineMode', 'true');
+                    localStorage.setItem('authModalDismissed', Date.now().toString());
+                    hideAuthModal();
+                    console.log('📴 Continuing in offline mode');
+                });
+            }
 
             // Settings modal event listeners (buttons don't have these IDs in HTML)
             // document.getElementById('closeSettingsBtn').addEventListener('click', closeSettingsModal);
