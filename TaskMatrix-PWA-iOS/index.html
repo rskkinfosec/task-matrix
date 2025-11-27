@@ -1473,15 +1473,18 @@
             
             // Google Sign-In button
             const googleSignInBtn = document.getElementById('googleSignInBtn');
+            console.log('🔍 Looking for googleSignInBtn:', googleSignInBtn);
             if (googleSignInBtn) {
                 googleSignInBtn.addEventListener('click', async (e) => {
-                    console.log('🖱️ Google Sign-In button clicked');
+                    console.log('🖱️ Google Sign-In button CLICKED!');
+                    console.log('🔍 isIosDevice:', isIosDevice, 'isStandalonePWA:', isStandalonePWA);
                     e.preventDefault();
                     e.stopPropagation();
                     
                     // iOS PWA: Use redirect flow instead of popup
                     if (isIosDevice && isStandalonePWA) {
                         console.log('ℹ️ iOS PWA detected - using redirect flow');
+                        alert('iOS PWA: About to redirect to Google sign-in');
                         try {
                             signInInProgress = true;
                             showSyncStatus('Redirecting to Google sign-in...', 'syncing');
@@ -1490,6 +1493,7 @@
                             // Browser will navigate away; code after this won't execute
                         } catch (error) {
                             console.error('❌ Redirect sign-in error:', error);
+                            alert('Redirect error: ' + error.message);
                             showSyncStatus('Sign-in failed: ' + error.message, 'error');
                             signInInProgress = false;
                             setTimeout(hideSyncStatus, 4000);
@@ -1498,6 +1502,7 @@
                     }
                     
                     // Desktop/Safari iOS: Use popup flow
+                    console.log('ℹ️ Using popup flow for non-PWA');
                     try {
                         signInInProgress = true;
                         showSyncStatus('Signing in with Google...', 'syncing');
@@ -1578,13 +1583,18 @@
             
             // Offline button
             const offlineBtn = document.getElementById('offlineBtn');
+            console.log('🔍 Looking for offlineBtn:', offlineBtn);
             if (offlineBtn) {
                 offlineBtn.addEventListener('click', () => {
+                    console.log('📴 Offline button CLICKED!');
+                    alert('Offline mode activated');
                     localStorage.setItem('offlineMode', 'true');
                     localStorage.setItem('authModalDismissed', Date.now().toString());
                     hideAuthModal();
                     console.log('📴 Continuing in offline mode');
                 });
+            } else {
+                console.error('❌ Offline button not found');
             }
 
             // Settings modal event listeners (buttons don't have these IDs in HTML)
@@ -3359,11 +3369,18 @@
 
         // Show/hide auth modal
         function showAuthModal() {
+            console.log('📱 showAuthModal called, checking shouldShowAuthModal...');
             if (shouldShowAuthModal()) {
                 const modal = document.getElementById('authModal');
                 console.log('📱 Showing auth modal...', modal);
+                if (!modal) {
+                    console.error('❌ authModal element not found in DOM!');
+                    return;
+                }
                 modal.classList.add('show');
                 console.log('✅ Auth modal classes:', modal.className);
+                console.log('✅ Auth modal display style:', window.getComputedStyle(modal).display);
+                
                 // If on iOS installed PWA, show a notice and update button text
                 try {
                     const iosNotice = document.getElementById('iosPwaSigninNotice');
@@ -3371,17 +3388,19 @@
                     const authFooterText = document.getElementById('authModalFooterText');
                     
                     if (isIosDevice && isStandalonePWA) {
+                        console.log('📱 iOS PWA detected - updating auth modal for PWA mode');
                         if (iosNotice) iosNotice.style.display = 'block';
                         if (googleSignInText) googleSignInText.textContent = 'Sign in with Google (Redirect)';
                         if (authFooterText) authFooterText.textContent = 'PWA Mode: Sign in or use offline mode. Your tasks are saved locally.';
                     } else {
+                        console.log('🌐 Regular browser mode - standard auth modal');
                         if (iosNotice) iosNotice.style.display = 'none';
                         if (googleSignInText) googleSignInText.textContent = 'Sign in with Google';
                         if (authFooterText) authFooterText.textContent = 'Sign in to sync your tasks across devices using Google Drive';
                     }
                 } catch (e) { console.warn('⚠️ Failed to update iOS PWA notice', e); }
             } else {
-                console.log('⏭️ Skipping auth modal (offline mode or recently dismissed)');
+                console.log('⏭️ Skipping auth modal (offline mode, recently dismissed, or user already authenticated)');
             }
         }
 
