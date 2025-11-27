@@ -947,13 +947,9 @@
                     <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18l2.67-2.07z"/>
                     <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.3z"/>
                 </svg>
-                Sign in with Google
+                <span id="googleSignInText">Sign in with Google</span>
             </button>
-            <div style="height:12px"></div>
-            <button type="button" class="auth-btn" id="openInBrowserSignin" style="background:#fff;color:#333;border:2px dashed #ddd;margin-top:8px;">Open in Browser to Sign In (Safari)</button>
-            <div style="height:8px"></div>
-            <div id="iosPwaSigninNotice" style="font-size:12px;color:#b91c1c;display:none;margin-top:6px;line-height:1.5;"><strong>iOS PWA Users:</strong> Use the two-step process below:<br>1️⃣ Click "Open in Browser" → Sign in with Google<br>2️⃣ Return here → Click "Complete Sign-In"</div>
-            <button type="button" class="auth-btn" id="completeSignInBtn" style="background:#f3f4f6;color:#333;border:2px solid #ddd;margin-top:8px;">Complete Sign-In</button>
+            <div id="iosPwaSigninNotice" style="font-size:12px;color:#0066cc;display:none;margin-top:12px;line-height:1.6;padding:10px;background:#e8f4ff;border-radius:8px;border:1px solid #99ccff;"><strong>📱 iOS PWA Mode</strong><br>Clicking above will redirect you to Google and back. Your tasks are saved locally and sync when signed in.</div>
             
             <div class="auth-divider">OR</div>
             
@@ -961,7 +957,7 @@
                 📴 Continue Offline
             </button>
             
-            <p style="font-size: 12px; color: #999; margin-top: 20px;">
+            <p style="font-size: 12px; color: #999; margin-top: 20px;" id="authModalFooterText">
                 Sign in to sync your tasks across devices using Google Drive
             </p>
         </div>
@@ -1474,80 +1470,8 @@
             document.getElementById('importBtn').addEventListener('click', openImportModal);
             document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
             document.getElementById('clearTabBtn').addEventListener('click', clearTabTasks);
-            // Open the app in the system browser (Safari) to workaround PWA iOS auth persistence issues
-            const openInBrowserBtn = document.getElementById('openInBrowserSignin');
-            if (openInBrowserBtn) {
-                openInBrowserBtn.addEventListener('click', () => {
-                    try { localStorage.setItem('auth_open_in_browser', 'true'); } catch (e) {}
-                    // Mark sign-in progress in this PWA context so we don't show the modal again while the user signs in on Safari
-                    try { signInInProgress = true; } catch (e) {}
-                    // For GitHub Pages, need to include the repository path; for localhost use /
-                    const pathPrefix = window.location.hostname.includes('github.io') ? '/TaskMatrix-PWA-iOS' : '';
-                    const url = window.location.origin + pathPrefix + '/redirect_signin.html';
-                    console.log('🌐 Opening sign-in page:', url);
-                    window.open(url, '_blank', 'noopener,noreferrer');
-                    showSyncStatus('Opened in system browser — sign in there and return to the app', 'syncing');
-                    setTimeout(hideSyncStatus, 6000);
-                });
-            }
-            const completeSigninBtn = document.getElementById('completeSignInBtn');
-            if (completeSigninBtn) {
-                completeSigninBtn.addEventListener('click', async (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    completeSigninBtn.disabled = true;
-                    completeSigninBtn.textContent = 'Checking...';
-                    
-                    showSyncStatus('Checking sign-in result...', 'syncing');
-                    try {
-                        // Capture OAuth access token from redirect result
-                        const token = await ensureOAuthAccessToken();
-                        
-                        if (token && auth.currentUser) {
-                            console.log('✅ Complete Sign-In: Found token and user');
-                            showSyncStatus('Sign-in complete!', 'success');
-                            hideAuthModal();
-                            
-                            // Sync tasks now that we have token & user
-                            setTimeout(() => { 
-                                if (accessToken && auth.currentUser) {
-                                    syncFromDrive();
-                                    syncToDrive();
-                                }
-                            }, 300);
-                            setTimeout(hideSyncStatus, 1500);
-                        } else if (auth.currentUser && !token) {
-                            console.log('⚠️ User signed in but no Drive token');
-                            showSyncStatus('Signed in but no Drive access. Use "Refresh Drive Authorization" in settings.', 'error');
-                            hideAuthModal();
-                            setTimeout(hideSyncStatus, 4000);
-                        } else {
-                            console.log('ℹ️ No sign-in detected. User may need to complete sign-in in browser first.');
-                            showSyncStatus('No sign-in detected. Please use "Open in Browser" first.', 'error');
-                            setTimeout(hideSyncStatus, 3000);
-                        }
-                        
-                        // Reset button state
-                        setTimeout(() => { 
-                            completeSigninBtn.disabled = false;
-                            completeSigninBtn.textContent = 'Complete Sign-In';
-                            signInInProgress = false;
-                            try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {}
-                        }, 800);
-                    } catch (error) {
-                        console.error('❌ Complete Sign-In error:', error);
-                        showSyncStatus('Sign-in check failed: ' + (error.message || ''), 'error');
-                        setTimeout(() => {
-                            completeSigninBtn.disabled = false;
-                            completeSigninBtn.textContent = 'Complete Sign-In';
-                            signInInProgress = false;
-                            try { localStorage.removeItem('auth_open_in_browser'); } catch (e) {}
-                            hideSyncStatus();
-                        }, 4000);
-                    }
-                });
-            }
+            
+            // Removed openInBrowserBtn and completeSignInBtn - using direct Firebase redirect in PWA
 
             // Settings modal event listeners (buttons don't have these IDs in HTML)
             // document.getElementById('closeSettingsBtn').addEventListener('click', closeSettingsModal);
@@ -3326,17 +3250,22 @@
                 console.log('📱 Showing auth modal...', modal);
                 modal.classList.add('show');
                 console.log('✅ Auth modal classes:', modal.className);
-                // If on iOS installed PWA, show a notice since Google sign-in redirect may not persist
+                // If on iOS installed PWA, show a notice and update button text
                 try {
                     const iosNotice = document.getElementById('iosPwaSigninNotice');
-                    if (iosNotice) {
-                        if (isIosDevice && isStandalonePWA) {
-                            iosNotice.style.display = 'block';
-                        } else {
-                            iosNotice.style.display = 'none';
-                        }
+                    const googleSignInText = document.getElementById('googleSignInText');
+                    const authFooterText = document.getElementById('authModalFooterText');
+                    
+                    if (isIosDevice && isStandalonePWA) {
+                        if (iosNotice) iosNotice.style.display = 'block';
+                        if (googleSignInText) googleSignInText.textContent = 'Sign in with Google (Redirect)';
+                        if (authFooterText) authFooterText.textContent = 'PWA Mode: Sign in or use offline mode. Your tasks are saved locally.';
+                    } else {
+                        if (iosNotice) iosNotice.style.display = 'none';
+                        if (googleSignInText) googleSignInText.textContent = 'Sign in with Google';
+                        if (authFooterText) authFooterText.textContent = 'Sign in to sync your tasks across devices using Google Drive';
                     }
-                } catch (e) { /* ignore */ }
+                } catch (e) { console.warn('⚠️ Failed to update iOS PWA notice', e); }
             } else {
                 console.log('⏭️ Skipping auth modal (offline mode or recently dismissed)');
             }
@@ -3603,11 +3532,21 @@
                 e.preventDefault();
                 e.stopPropagation();
                 
-                // iOS PWA: Direct users to use the dedicated two-step flow
+                // iOS PWA: Use redirect flow instead of popup (popups don't work reliably in PWA)
                 if (isIosDevice && isStandalonePWA) {
-                    console.log('ℹ️ iOS PWA detected - directing to two-step auth flow');
-                    showSyncStatus('For iOS PWA: Use "Open in Browser" button below', 'error');
-                    setTimeout(hideSyncStatus, 4000);
+                    console.log('ℹ️ iOS PWA detected - using redirect flow');
+                    try {
+                        signInInProgress = true;
+                        showSyncStatus('Redirecting to Google sign-in...', 'syncing');
+                        localStorage.setItem('auth_signin_started', Date.now().toString());
+                        await auth.signInWithRedirect(googleProvider);
+                        // Browser will navigate away; code after this won't execute
+                    } catch (error) {
+                        console.error('❌ Redirect sign-in error:', error);
+                        showSyncStatus('Sign-in failed: ' + error.message, 'error');
+                        signInInProgress = false;
+                        setTimeout(hideSyncStatus, 4000);
+                    }
                     return;
                 }
                 
