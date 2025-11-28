@@ -949,7 +949,19 @@
                 </svg>
                 <span id="googleSignInText">Sign in with Google</span>
             </button>
-            <div id="iosPwaSigninNotice" style="font-size:12px;color:#0066cc;display:none;margin-top:12px;line-height:1.6;padding:10px;background:#e8f4ff;border-radius:8px;border:1px solid #99ccff;"><strong>📱 iOS PWA Mode</strong><br>Clicking above will redirect you to Google and back. Your tasks are saved locally and sync when signed in.</div>
+            <div id="iosPwaSigninNotice" style="font-size:12px;color:#ff6b00;display:none;margin-top:12px;line-height:1.6;padding:10px;background:#fff3e0;border-radius:8px;border:1px solid #ffcc80;">
+                <strong>⚠️ iOS PWA Mode Detected</strong><br>
+                Due to iOS limitations, sign-in doesn't work in installed PWAs.<br><br>
+                <strong>To sync your PWA tasks:</strong><br>
+                1. Tap "Continue Offline" below<br>
+                2. Create your tasks in the PWA<br>
+                3. Tap "📤 Share" button (top right)<br>
+                4. Save/Share the backup file<br>
+                5. Open this app in Safari browser<br>
+                6. Sign in with Google in Safari<br>
+                7. Tap "📥 Import" → Select your backup<br>
+                8. Your tasks will sync to cloud!
+            </div>
             
             <div class="auth-divider">OR</div>
             
@@ -1025,6 +1037,7 @@
         <div class="action-buttons">
             <button class="action-btn" id="exportBtn" onclick="exportToExcel()">📊 Export</button>
             <button class="action-btn" id="importBtn" onclick="openImportModal()">📥 Import</button>
+            <button class="action-btn" id="shareTasksBtn" onclick="shareTasks()" style="display:none;">📤 Share</button>
             <button class="action-btn" id="settingsBtn" onclick="openSettingsModal()">⚙️ Settings</button>
             <button class="action-btn clear-btn" id="clearTabBtn" onclick="clearTabTasks()" style="display:none;">🗑️ Clear Tab</button>
         </div>
@@ -1250,7 +1263,7 @@
             <h3>📥 Import from Excel/CSV</h3>
             <div class="form-group">
                 <label>Select File (.xlsx, .xls, .csv, .tsv)</label>
-                <input type="file" id="importFile" accept=".xlsx,.xls,.csv,.tsv,.txt" style="width:100%;padding:10px;">
+                <input type="file" id="importFile" accept=".xlsx,.xls,.csv,.tsv,.txt,.json" style="width:100%;padding:10px;">
             </div>
             <div class="form-group">
                 <label>Import Instructions:</label>
@@ -1412,6 +1425,11 @@
                         hideAuthModal();
                     } else {
                         console.log('🔁 DOM ready: no user currently signed in');
+                        // Show Share button for iOS PWA users in offline mode
+                        if (isIosDevice && isStandalonePWA) {
+                            const shareBtn = document.getElementById('shareTasksBtn');
+                            if (shareBtn) shareBtn.style.display = 'inline-block';
+                        }
                         // iOS PWA recovery: check if there's a saved email from previous signin
                         const savedEmail = getSavedUserEmail();
                         if (savedEmail && (isIosDevice || isStandalonePWA)) {
@@ -1481,23 +1499,19 @@
                     e.preventDefault();
                     e.stopPropagation();
                     
-                    // iOS PWA: Use redirect flow instead of popup
+                    // iOS PWA: Auth doesn't persist across redirects due to isolated storage
+                    // For now, direct users to use offline mode or sign in via Safari first
                     if (isIosDevice && isStandalonePWA) {
-                        console.log('ℹ️ iOS PWA detected - using redirect flow');
-                        alert('iOS PWA: About to redirect to Google sign-in');
-                        try {
-                            signInInProgress = true;
-                            showSyncStatus('Redirecting to Google sign-in...', 'syncing');
-                            localStorage.setItem('auth_signin_started', Date.now().toString());
-                            await auth.signInWithRedirect(googleProvider);
-                            // Browser will navigate away; code after this won't execute
-                        } catch (error) {
-                            console.error('❌ Redirect sign-in error:', error);
-                            alert('Redirect error: ' + error.message);
-                            showSyncStatus('Sign-in failed: ' + error.message, 'error');
-                            signInInProgress = false;
-                            setTimeout(hideSyncStatus, 4000);
-                        }
+                        console.log('⚠️ iOS PWA detected - redirects won\'t work due to storage isolation');
+                        const message = 'iOS PWA Limitation:\n\n' +
+                                      'Due to iOS security, sign-in redirects don\'t work in installed PWAs.\n\n' +
+                                      'Options:\n' +
+                                      '1. Use "Continue Offline" to work locally\n' +
+                                      '2. Open this app in Safari to sign in\n\n' +
+                                      'Your tasks are always saved on your device.';
+                        alert(message);
+                        showSyncStatus('iOS PWA: Use offline mode or sign in via Safari browser', 'error');
+                        setTimeout(hideSyncStatus, 5000);
                         return;
                     }
                     
@@ -2568,6 +2582,64 @@
             }
         }
 
+        // Share tasks as downloadable JSON file (for iOS PWA users)
+        function shareTasks() {
+            try {
+                if (tasks.length === 0) {
+                    alert('No tasks to share. Create some tasks first!');
+                    return;
+                }
+                
+                // Create export data
+                const exportData = {
+                    exportDate: new Date().toISOString(),
+                    appVersion: '2.0',
+                    taskCount: tasks.length,
+                    tasks: tasks,
+                    customTabs: customTabs
+                };
+                
+                const jsonString = JSON.stringify(exportData, null, 2);
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const filename = `taskmatrix-backup-${new Date().toISOString().split('T')[0]}.json`;
+                
+                // Try to use Web Share API (works on iOS)
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], filename)] })) {
+                    const file = new File([blob], filename, { type: 'application/json' });
+                    navigator.share({
+                        title: 'TaskMatrix Tasks Backup',
+                        text: `Backup of ${tasks.length} tasks from TaskMatrix`,
+                        files: [file]
+                    }).then(() => {
+                        console.log('✅ Tasks shared successfully');
+                        alert(`✅ Shared ${tasks.length} tasks!\n\nSave this file and import it in Safari to sync to cloud.`);
+                    }).catch((error) => {
+                        console.error('Share failed:', error);
+                        // Fallback to download
+                        downloadFile(url, filename);
+                    });
+                } else {
+                    // Fallback: download file
+                    downloadFile(url, filename);
+                }
+            } catch (error) {
+                console.error('Share error:', error);
+                alert('❌ Share failed: ' + error.message);
+            }
+        }
+        
+        function downloadFile(url, filename) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            alert(`📥 Downloaded ${filename}\n\nOpen this app in Safari, sign in, and import this file to sync to cloud.`);
+        }
+
         function exportToExcel() {
             // Create CSV export that can be copied and pasted into Excel
             try {
@@ -2907,7 +2979,64 @@
                     let data;
                     const fileName = file.name.toLowerCase();
                     
-                    if (fileName.endsWith('.csv') || fileName.endsWith('.tsv') || fileName.endsWith('.txt')) {
+                    if (fileName.endsWith('.json')) {
+                        // Parse JSON backup file
+                        const jsonData = JSON.parse(e.target.result);
+                        
+                        if (jsonData.tasks && Array.isArray(jsonData.tasks)) {
+                            // This is a TaskMatrix backup file
+                            const confirm = window.confirm(
+                                `📦 Import TaskMatrix Backup?\n\n` +
+                                `Tasks: ${jsonData.taskCount || jsonData.tasks.length}\n` +
+                                `Export Date: ${jsonData.exportDate ? new Date(jsonData.exportDate).toLocaleString() : 'Unknown'}\n\n` +
+                                `This will add these tasks to your current tasks.`
+                            );
+                            
+                            if (confirm) {
+                                // Import tasks directly
+                                let imported = 0;
+                                jsonData.tasks.forEach(task => {
+                                    if (task.id && task.title) {
+                                        // Check if task already exists
+                                        if (!tasks.find(t => t.id === task.id)) {
+                                            tasks.push(task);
+                                            imported++;
+                                        }
+                                    }
+                                });
+                                
+                                // Import custom tabs if available
+                                if (jsonData.customTabs && Array.isArray(jsonData.customTabs)) {
+                                    jsonData.customTabs.forEach(tab => {
+                                        if (tab && !customTabs.includes(tab)) {
+                                            customTabs.push(tab);
+                                        }
+                                    });
+                                }
+                                
+                                if (imported > 0) {
+                                    saveTasks();
+                                    saveCustomTabs();
+                                    renderTasks();
+                                    closeImportModal();
+                                    alert(`✅ Successfully imported ${imported} tasks!`);
+                                    
+                                    // If user is signed in, trigger sync
+                                    if (currentUser) {
+                                        syncToGoogleDrive();
+                                    }
+                                } else {
+                                    alert('ℹ️ No new tasks to import (all tasks already exist)');
+                                }
+                                return;
+                            } else {
+                                return;
+                            }
+                        } else {
+                            alert('❌ Invalid JSON backup file format');
+                            return;
+                        }
+                    } else if (fileName.endsWith('.csv') || fileName.endsWith('.tsv') || fileName.endsWith('.txt')) {
                         // Parse CSV/TSV
                         const text = e.target.result;
                         const delimiter = fileName.endsWith('.tsv') ? '\t' : ',';
@@ -2931,6 +3060,8 @@
             };
             
             if (file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.tsv') || file.name.toLowerCase().endsWith('.txt')) {
+                reader.readAsText(file);
+            } else if (file.name.toLowerCase().endsWith('.json')) {
                 reader.readAsText(file);
             } else {
                 reader.readAsBinaryString(file);
@@ -3390,8 +3521,8 @@
                     if (isIosDevice && isStandalonePWA) {
                         console.log('📱 iOS PWA detected - updating auth modal for PWA mode');
                         if (iosNotice) iosNotice.style.display = 'block';
-                        if (googleSignInText) googleSignInText.textContent = 'Sign in with Google (Redirect)';
-                        if (authFooterText) authFooterText.textContent = 'PWA Mode: Sign in or use offline mode. Your tasks are saved locally.';
+                        if (googleSignInText) googleSignInText.textContent = 'About Sign-In (iOS PWA)';
+                        if (authFooterText) authFooterText.textContent = 'iOS PWA: Use offline mode or open in Safari to sign in. Tasks are saved locally.';
                     } else {
                         console.log('🌐 Regular browser mode - standard auth modal');
                         if (iosNotice) iosNotice.style.display = 'none';
