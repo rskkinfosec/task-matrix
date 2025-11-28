@@ -955,12 +955,12 @@
                 <strong>✨ Automatic Sync Solution:</strong><br>
                 1. Tap "Continue Offline" below<br>
                 2. Create your tasks in the PWA<br>
-                3. Tap "📤 Share" button (auto-saves)<br>
-                4. Open Safari → This app will auto-detect<br>
+                3. Tap "📤 Share" button (top-right)<br>
+                4. Open Safari → Auto-detects your tasks!<br>
                 5. Sign in with Google<br>
-                6. Tasks merge automatically! ✅<br>
+                6. Tasks merge & sync automatically! ✅<br>
                 <br>
-                <em style="font-size:11px;">No file import needed - works automatically via browser cache!</em>
+                <em style="font-size:11px;">Works via browser cache - no manual file import needed!</em>
             </div>
             
             <div class="auth-divider">OR</div>
@@ -1035,9 +1035,10 @@
 
         <!-- Action Buttons -->
         <div class="action-buttons">
-            <button class="action-btn" id="exportBtn" onclick="exportToExcel()">📊 Export</button>
+            <button class="action-btn" id="exportBtn" onclick="exportToExcel()">
+                <span id="exportBtnIcon">📊</span> <span id="exportBtnText">Export</span>
+            </button>
             <button class="action-btn" id="importBtn" onclick="openImportModal()">📥 Import</button>
-            <button class="action-btn" id="shareTasksBtn" onclick="shareTasks()" style="display:none;">📤 Share</button>
             <button class="action-btn" id="settingsBtn" onclick="openSettingsModal()">⚙️ Settings</button>
             <button class="action-btn clear-btn" id="clearTabBtn" onclick="clearTabTasks()" style="display:none;">🗑️ Clear Tab</button>
         </div>
@@ -1430,10 +1431,12 @@
                         hideAuthModal();
                     } else {
                         console.log('🔁 DOM ready: no user currently signed in');
-                        // Show Share button for iOS PWA users in offline mode
+                        // Customize Export button for iOS PWA users (emphasize sharing)
                         if (isIosDevice && isStandalonePWA) {
-                            const shareBtn = document.getElementById('shareTasksBtn');
-                            if (shareBtn) shareBtn.style.display = 'inline-block';
+                            const exportIcon = document.getElementById('exportBtnIcon');
+                            const exportText = document.getElementById('exportBtnText');
+                            if (exportIcon) exportIcon.textContent = '📤';
+                            if (exportText) exportText.textContent = 'Share';
                         }
                         // iOS PWA recovery: check if there's a saved email from previous signin
                         const savedEmail = getSavedUserEmail();
@@ -2738,9 +2741,31 @@
             }
         }
 
-        function exportToExcel() {
+        async function exportToExcel() {
             // Create CSV export that can be copied and pasted into Excel
             try {
+                // First, save to Cache API for cross-context sync (iOS PWA → Safari)
+                if (tasks.length > 0) {
+                    try {
+                        const exportData = {
+                            exportDate: new Date().toISOString(),
+                            appVersion: '2.0',
+                            taskCount: tasks.length,
+                            tasks: tasks,
+                            customTabs: customTabs,
+                            source: isStandalonePWA ? 'pwa' : 'safari'
+                        };
+                        const cache = await caches.open('taskmatrix-sync-v1');
+                        const response = new Response(JSON.stringify(exportData, null, 2), {
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        await cache.put('/pwa-tasks-export.json', response);
+                        console.log('✅ Saved to Cache API for cross-context sync');
+                    } catch (cacheError) {
+                        console.warn('⚠️ Cache API save failed:', cacheError);
+                    }
+                }
+                
                 let csvContent = '';
                 
                 // Add export header
@@ -2804,6 +2829,13 @@
                 // Show export modal with data (clipboard API doesn't work reliably in WebView)
                 showExportModal(csvContent);
                 
+                // Show success message for iOS PWA users about cache sync
+                if (isIosDevice && isStandalonePWA && tasks.length > 0) {
+                    setTimeout(() => {
+                        showNotification('✅ Tasks auto-saved! Open Safari to sync to cloud', 'success');
+                    }, 500);
+                }
+                
             } catch (error) {
                 console.error('Export error:', error);
                 alert('❌ Export failed: ' + error.message);
@@ -2819,11 +2851,25 @@
             container.style.cssText = 'background:white;border-radius:12px;padding:20px;max-width:600px;width:100%;max-height:85vh;display:flex;flex-direction:column;';
             
             const title = document.createElement('h3');
-            title.textContent = '📊 Export to Excel';
+            title.textContent = isStandalonePWA && isIosDevice ? '📤 Share / Export Tasks' : '📊 Export to Excel';
             title.style.cssText = 'margin:0 0 10px 0;color:#667eea;font-size:18px;';
             
             const instructions = document.createElement('div');
-            instructions.innerHTML = `
+            if (isStandalonePWA && isIosDevice) {
+                instructions.innerHTML = `
+                    <p style="margin:0 0 8px 0;font-size:13px;color:#666;">
+                        <strong>✨ Auto-Sync Enabled!</strong>
+                    </p>
+                    <div style="margin:0 0 12px 0;padding:12px;background:#fff3e0;border-radius:8px;border:1px solid #ffcc80;font-size:12px;color:#ff6b00;line-height:1.6;">
+                        Your tasks are saved to browser cache.<br>
+                        <strong>Next step:</strong> Open Safari → Sign in → Tasks auto-merge!
+                    </div>
+                    <p style="margin:0 0 8px 0;font-size:13px;color:#666;">
+                        <strong>Optional:</strong> Copy data below for Excel/Sheets backup
+                    </p>
+                `;
+            } else {
+                instructions.innerHTML = `
                 <p style="margin:0 0 8px 0;font-size:13px;color:#666;">
                     <strong>How to use:</strong>
                 </p>
@@ -2835,6 +2881,7 @@
                     <li>Data will be organized in columns automatically</li>
                 </ol>
             `;
+            }
             
             const textarea = document.createElement('textarea');
             textarea.value = content;
