@@ -952,15 +952,15 @@
             <div id="iosPwaSigninNotice" style="font-size:12px;color:#ff6b00;display:none;margin-top:12px;line-height:1.6;padding:10px;background:#fff3e0;border-radius:8px;border:1px solid #ffcc80;">
                 <strong>⚠️ iOS PWA Mode Detected</strong><br>
                 Due to iOS limitations, sign-in doesn't work in installed PWAs.<br><br>
-                <strong>To sync your PWA tasks:</strong><br>
+                <strong>✨ Automatic Sync Solution:</strong><br>
                 1. Tap "Continue Offline" below<br>
                 2. Create your tasks in the PWA<br>
-                3. Tap "📤 Share" button (top right)<br>
-                4. Save/Share the backup file<br>
-                5. Open this app in Safari browser<br>
-                6. Sign in with Google in Safari<br>
-                7. Tap "📥 Import" → Select your backup<br>
-                8. Your tasks will sync to cloud!
+                3. Tap "📤 Share" button (auto-saves)<br>
+                4. Open Safari → This app will auto-detect<br>
+                5. Sign in with Google<br>
+                6. Tasks merge automatically! ✅<br>
+                <br>
+                <em style="font-size:11px;">No file import needed - works automatically via browser cache!</em>
             </div>
             
             <div class="auth-divider">OR</div>
@@ -1388,6 +1388,11 @@
             startNotificationTimer();
             loadSettings();
             updateClearTabButton(); // Initialize clear button visibility
+            
+            // Check for PWA tasks in Cache API (Safari only, auto-import from PWA)
+            if (!isStandalonePWA) {
+                setTimeout(() => checkAndImportFromCache(), 500);
+            }
 
             // Wire up Clear All Tasks button
             const clearAllBtn = document.getElementById('clearAllTasksBtn');
@@ -2583,7 +2588,8 @@
         }
 
         // Share tasks as downloadable JSON file (for iOS PWA users)
-        function shareTasks() {
+        // Also saves to Cache API for automatic cross-context sync
+        async function shareTasks() {
             try {
                 if (tasks.length === 0) {
                     alert('No tasks to share. Create some tasks first!');
@@ -2596,10 +2602,23 @@
                     appVersion: '2.0',
                     taskCount: tasks.length,
                     tasks: tasks,
-                    customTabs: customTabs
+                    customTabs: customTabs,
+                    source: isStandalonePWA ? 'pwa' : 'safari'
                 };
                 
                 const jsonString = JSON.stringify(exportData, null, 2);
+                
+                // Save to Cache API for cross-context access
+                try {
+                    const cache = await caches.open('taskmatrix-sync-v1');
+                    const response = new Response(jsonString, {
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    await cache.put('/pwa-tasks-export.json', response);
+                    console.log('✅ Saved tasks to Cache API for cross-context sync');
+                } catch (cacheError) {
+                    console.warn('⚠️ Cache API save failed:', cacheError);
+                }
                 const blob = new Blob([jsonString], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const filename = `taskmatrix-backup-${new Date().toISOString().split('T')[0]}.json`;
@@ -2613,7 +2632,7 @@
                         files: [file]
                     }).then(() => {
                         console.log('✅ Tasks shared successfully');
-                        alert(`✅ Shared ${tasks.length} tasks!\n\nSave this file and import it in Safari to sync to cloud.`);
+                        alert(`✅ Shared ${tasks.length} tasks!\n\nYour tasks are also auto-saved for Safari sync.\nJust open Safari and sign in - tasks will merge automatically!`);
                     }).catch((error) => {
                         console.error('Share failed:', error);
                         // Fallback to download
@@ -2638,6 +2657,85 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             alert(`📥 Downloaded ${filename}\n\nOpen this app in Safari, sign in, and import this file to sync to cloud.`);
+        }
+        
+        // Check Cache API for tasks from PWA (cross-context sync)
+        async function checkAndImportFromCache() {
+            try {
+                // Only run in Safari (not PWA) when signed in
+                if (isStandalonePWA) {
+                    console.log('Skipping cache import - running in PWA');
+                    return;
+                }
+                
+                const cache = await caches.open('taskmatrix-sync-v1');
+                const cachedResponse = await cache.match('/pwa-tasks-export.json');
+                
+                if (!cachedResponse) {
+                    console.log('No cached PWA tasks found');
+                    return;
+                }
+                
+                const exportData = await cachedResponse.json();
+                
+                if (!exportData.tasks || !Array.isArray(exportData.tasks)) {
+                    console.warn('Invalid cached data format');
+                    return;
+                }
+                
+                // Check if these tasks are already imported
+                const cacheKey = `imported_cache_${exportData.exportDate}`;
+                if (localStorage.getItem(cacheKey)) {
+                    console.log('Cache tasks already imported');
+                    return;
+                }
+                
+                console.log(`Found ${exportData.tasks.length} cached tasks from PWA`);
+                
+                // Merge tasks (skip duplicates)
+                let imported = 0;
+                exportData.tasks.forEach(task => {
+                    if (task.id && task.title) {
+                        if (!tasks.find(t => t.id === task.id)) {
+                            tasks.push(task);
+                            imported++;
+                        }
+                    }
+                });
+                
+                // Merge custom tabs
+                if (exportData.customTabs && Array.isArray(exportData.customTabs)) {
+                    exportData.customTabs.forEach(tab => {
+                        if (tab && !customTabs.includes(tab)) {
+                            customTabs.push(tab);
+                        }
+                    });
+                }
+                
+                if (imported > 0) {
+                    saveTasks();
+                    saveCustomTabs();
+                    renderTasks();
+                    
+                    // Mark as imported
+                    localStorage.setItem(cacheKey, 'true');
+                    
+                    // Show notification
+                    showNotification(`🔄 Auto-imported ${imported} tasks from PWA`, 'success');
+                    
+                    // Trigger cloud sync if signed in
+                    if (currentUser) {
+                        console.log('Triggering cloud sync after cache import');
+                        setTimeout(() => syncToGoogleDrive(), 1000);
+                    }
+                    
+                    // Clear cache after successful import
+                    await cache.delete('/pwa-tasks-export.json');
+                    console.log('✅ Cache cleared after import');
+                }
+            } catch (error) {
+                console.error('Cache import error:', error);
+            }
         }
 
         function exportToExcel() {
@@ -3675,8 +3773,12 @@
                 
                 // Load tasks from Google Drive (if available)
                 setTimeout(() => {
-                    // Ensure we have the access token before trying to sync
-                    ensureOAuthAccessToken().then(() => {
+                    // First check for cached PWA tasks (Safari only)
+                    const importPromise = isStandalonePWA ? Promise.resolve() : checkAndImportFromCache();
+                    
+                    importPromise.then(() => {
+                        // Then ensure we have the access token before trying to sync
+                        ensureOAuthAccessToken().then(() => {
                         console.log('✅ ensureOAuthAccessToken check complete, token:', accessToken ? '✅ present' : '❌ null');
                         syncFromDrive().then(() => {
                             // After Drive sync completes, refresh the UI
@@ -3687,6 +3789,7 @@
                                 setTimeout(() => syncToDrive(), 500);
                             }
                         });
+                    });
                     });
                 }, 1000);
                 // If we have signed-in but don't have a Drive OAuth accessToken, encourage user to refresh Drive auth
